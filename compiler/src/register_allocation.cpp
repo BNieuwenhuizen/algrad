@@ -94,7 +94,6 @@ colorRegisters(LProgram& program)
     std::vector<std::unordered_set<unsigned>> ig(program.allocatedIds());
     std::vector<int> colors(program.allocatedIds(), -1);
 
-
     for (auto& fun : program.functions()) {
         for (auto& bb : fun->blocks()) {
             std::unordered_map<unsigned, LReg> live;
@@ -127,42 +126,46 @@ colorRegisters(LProgram& program)
         for (auto& bb : fun->blocks()) {
             std::vector<bool> colorsUsed(512);
             for (auto it = bb->instructions().begin(); it != bb->instructions().end(); ++it) {
-                for(auto& arg : it->args()) {
-                    if(arg.role() == LArg::Role::use ) {
+                for (auto& arg : it->args()) {
+                    if (arg.role() == LArg::Role::use) {
                         if (arg.kill())
                             colorsUsed[colors[arg.data()]] = false;
-                        arg.setFixed(PhysReg{colors[arg.data()]});
+                        arg.setFixed(PhysReg{static_cast<unsigned>(colors[arg.data()])});
                     }
                 }
                 LArg prevArg;
-                for(auto& arg : it->args()) {
-                    if(arg.role() == LArg::Role::def && colors[arg.data()] < 0) {
-                        std::vector<bool> forbidden = colorsUsed;
-                        int c =  -1;
-                        if(arg.isFixed()) {
-                            c = arg.physReg().reg;
-                        }
-                        if(it + 1 != bb->instructions().end()) {
-                            for(auto const& arg2 : it[1].args())  {
-                                if(arg2.isFixed()) {
-                                    if(arg.data() != arg2.data())
-                                        forbidden[arg2.physReg().reg] = true;
-                                    else
-                                        c = arg2.physReg().reg;
+                for (auto& arg : it->args()) {
+                    if (arg.role() == LArg::Role::def) {
+                        if (colors[arg.data()] < 0) {
+                            std::vector<bool> forbidden = colorsUsed;
+                            int c = -1;
+                            if (arg.isFixed()) {
+                                c = arg.physReg().reg;
+                            }
+                            if (it + 1 != bb->instructions().end()) {
+                                for (auto const& arg2 : it[1].args()) {
+                                    if (arg2.isFixed()) {
+                                        if (arg.data() != arg2.data())
+                                            forbidden[arg2.physReg().reg] = true;
+                                        else
+                                            c = arg2.physReg().reg;
+                                    }
                                 }
                             }
-                        }
-                        if(c == -1 && it->opCode() == LOpCode::parallel_copy && !forbidden[prevArg.physReg().reg]) {
-                            c = prevArg.physReg().reg;
-                        }
+                            if (c == -1 && it->opCode() == LOpCode::parallel_copy &&
+                                !forbidden[prevArg.physReg().reg]) {
+                                c = prevArg.physReg().reg;
+                            }
 
-                        if(c == -1) {
-                            c =  arg.regClass() == RegClass::vgpr ? 256 : 0;
-                            while (forbidden[c]) ++c;
+                            if (c == -1) {
+                                c = arg.regClass() == RegClass::vgpr ? 256 : 0;
+                                while (forbidden[c])
+                                    ++c;
+                            }
+                            colorsUsed[c] = true;
+                            colors[arg.data()] = c;
                         }
-                        colorsUsed[c] = true;
-                        colors[arg.data()] = c;
-                        arg.setFixed(PhysReg{c});
+                        arg.setFixed(PhysReg{static_cast<unsigned>(colors[arg.data()])});
                     }
                     prevArg = arg;
                 }
