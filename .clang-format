@@ -1,0 +1,6 @@
+BasedOnStyle: Mozilla
+IndentWidth: 4
+ColumnLimit: 120
+Cpp11BracedListStyle: true
+BinPackParameters: true
+Standard: Cpp11
