@@ -25,7 +25,7 @@ constexpr InstFlags operator~(InstFlags flags) noexcept
 
 constexpr bool operator!(InstFlags flags) noexcept
 {
-    return flags != InstFlags::none;
+    return flags == InstFlags::none;
 }
 
 inline Def::Def(OpCode opCode, int id, Type type, InstFlags flags) noexcept : opCode_{opCode},
