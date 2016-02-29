@@ -1,19 +1,21 @@
-#include "ir.hpp"
+#include "hir.hpp"
 #include "lir.hpp"
 #include <iostream>
+#include "hir_inlines.hpp"
 
 namespace algrad {
 namespace compiler {
+
+using namespace hir;
 
 std::vector<RegClass>
 computeRegisterClasses(Program& program)
 {
     std::vector<RegClass> regClasses(program.defIdCount(), RegClass::sgpr);
-    for (auto& fun : program.functions()) {
-        regClasses[fun->params()[0]->id()] = RegClass::sgpr;
-        regClasses[fun->params()[1]->id()] = RegClass::vgpr;
-        regClasses[fun->params()[2]->id()] = RegClass::vgpr;
-        for (auto& bb : fun->basicBlocks()) {
+        regClasses[program.params()[0]->id()] = RegClass::sgpr;
+        regClasses[program.params()[1]->id()] = RegClass::vgpr;
+        regClasses[program.params()[2]->id()] = RegClass::vgpr;
+        for (auto& bb : program.basicBlocks()) {
             for (auto& insn : bb->instructions()) {
                 if (insn->type() == &voidType)
                     continue;
@@ -27,7 +29,6 @@ computeRegisterClasses(Program& program)
                 }
             }
         }
-    }
     return regClasses;
 }
 
@@ -49,12 +50,12 @@ getReg(SelectionContext& ctx, Def& def, RegClass rc, unsigned size)
 }
 
 void
-createStartInstruction(SelectionContext& ctx, LFunction& lfunc, Function& func)
+createStartInstruction(SelectionContext& ctx, LFunction& lfunc, hir::Program& program)
 {
-    LInst newInst{LOpCode::start, static_cast<unsigned>(func.params().size())};
-    newInst.args()[0] = LArg{getReg(ctx, *func.params()[0], RegClass::sgpr, 4), LArg::Role::def, PhysReg{16}};
-    newInst.args()[1] = LArg{getReg(ctx, *func.params()[1], RegClass::vgpr, 4), LArg::Role::def, PhysReg{0 + 256}};
-    newInst.args()[2] = LArg{getReg(ctx, *func.params()[2], RegClass::vgpr, 4), LArg::Role::def, PhysReg{1 + 256}};
+    LInst newInst{LOpCode::start, static_cast<unsigned>(program.params().size())};
+    newInst.args()[0] = LArg{getReg(ctx, *program.params()[0], RegClass::sgpr, 4), LArg::Role::def, PhysReg{16}};
+    newInst.args()[1] = LArg{getReg(ctx, *program.params()[1], RegClass::vgpr, 4), LArg::Role::def, PhysReg{0 + 256}};
+    newInst.args()[2] = LArg{getReg(ctx, *program.params()[2], RegClass::vgpr, 4), LArg::Role::def, PhysReg{1 + 256}};
 
     lfunc.blocks().front()->instructions().push_back(std::move(newInst));
 }
@@ -72,16 +73,16 @@ selectInstructions(Program& program)
     lprog->functions().push_back(std::make_unique<LFunction>());
     auto& lfunc = *lprog->functions().back();
 
-    for (auto& bb : program.mainFunction().basicBlocks()) {
+    for (auto& bb : program.basicBlocks()) {
         lfunc.blocks().push_back(std::make_unique<LBlock>());
     }
 
-    for (int i = program.mainFunction().basicBlocks().size() - 1; i >= 0; --i) {
-        auto& bb = *program.mainFunction().basicBlocks()[i];
+    for (int i = program.basicBlocks().size() - 1; i >= 0; --i) {
+        auto& bb = *program.basicBlocks()[i];
         auto& lbb = *lfunc.blocks()[i];
 
         for (int j = bb.instructions().size() - 1; j >= 0; --j) {
-            Instruction& insn = *bb.instructions()[j];
+            Inst& insn = *bb.instructions()[j];
             switch (insn.opCode()) {
                 case OpCode::ret:
                     lbb.instructions().emplace_back(LOpCode::s_endpgm, 0);
@@ -137,7 +138,7 @@ selectInstructions(Program& program)
         }
     }
 
-    createStartInstruction(ctx, lfunc, program.mainFunction());
+    createStartInstruction(ctx, lfunc, program);
 
     for (auto& b : lfunc.blocks())
         std::reverse(b->instructions().begin(), b->instructions().end());

@@ -1,5 +1,5 @@
-#ifndef ALGRAD_COMPILER__TYPES_HPP
-#define ALGRAD_COMPILER__TYPES_HPP
+#ifndef ALGRAD_COMPILER_TYPES_HPP
+#define ALGRAD_COMPILER_TYPES_HPP
 
 #include <cassert>
 #include <cstdint>
@@ -19,8 +19,7 @@ enum class TypeKind
     matrix,
     pointer,
     array,
-    structure,
-    function
+    structure
 };
 
 enum class StorageKind
@@ -28,7 +27,6 @@ enum class StorageKind
     global,
     workgroup,
     invocation,
-    function,
     uniform,
     uniformConstant,
     pushConstant,
@@ -88,25 +86,11 @@ class PointerTypeInfo final : public TypeInfo
     Type pointeeType_;
 };
 
-class FunctionTypeInfo : public TypeInfo
-{
-  public:
-    FunctionTypeInfo(Type returnType, std::vector<Type> argumentTypes);
-
-    Type returnType() const noexcept;
-    std::vector<Type> const& argumentTypes() const noexcept;
-
-  private:
-    Type returnType_;
-    std::vector<Type> argumentTypes_;
-};
-
 class TypeContext
 {
   public:
     Type vectorType(Type element, unsigned count);
     Type pointerType(Type pointee, StorageKind storage);
-    Type functionType(Type returnType, std::vector<Type> argTypes);
 
   private:
     struct TypeInfoDeleter
@@ -189,18 +173,6 @@ constexpr Type
 PointerTypeInfo::pointeeType() const noexcept
 {
     return pointeeType_;
-}
-
-inline Type
-FunctionTypeInfo::returnType() const noexcept
-{
-    return returnType_;
-}
-
-inline std::vector<Type> const&
-FunctionTypeInfo::argumentTypes() const noexcept
-{
-    return argumentTypes_;
 }
 }
 }

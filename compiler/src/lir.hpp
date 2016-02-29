@@ -1,5 +1,5 @@
-#ifndef ALGRAD_LIR_HPP_HPP
-#define ALGRAD_LIR_HPP_HPP
+#ifndef ALGRAD_LIR_HPP
+#define ALGRAD_LIR_HPP
 
 #include <boost/range/iterator_range.hpp>
 #include <cstdint>
@@ -177,9 +177,11 @@ class LProgram
 
 void print(std::ostream& os, LProgram& program);
 
+namespace hir {
 class Program;
+}
 
-std::unique_ptr<LProgram> selectInstructions(Program& program);
+std::unique_ptr<LProgram> selectInstructions(hir::Program& program);
 void allocateRegisters(LProgram& program);
 
 constexpr LReg::LReg(std::uint32_t id, RegClass cls, unsigned size) noexcept

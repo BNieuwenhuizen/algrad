@@ -42,13 +42,6 @@ floatType(unsigned width) noexcept
     }
 }
 
-FunctionTypeInfo::FunctionTypeInfo(Type returnType, std::vector<Type> argumentTypes)
-  : TypeInfo{TypeKind::function}
-  , returnType_{returnType}
-  , argumentTypes_{std::move(argumentTypes)}
-{
-}
-
 void
 TypeContext::TypeInfoDeleter::operator()(TypeInfo* ti) noexcept
 {
@@ -68,9 +61,6 @@ TypeContext::TypeInfoDeleter::operator()(TypeInfo* ti) noexcept
             break;
         case TypeKind::pointer:
             delete static_cast<PointerTypeInfo*>(ti);
-            break;
-        case TypeKind::function:
-            delete static_cast<FunctionTypeInfo*>(ti);
             break;
     }
 }
@@ -105,22 +95,6 @@ TypeContext::pointerType(Type pointee, StorageKind storage)
     return typeInfos_.back().get();
 }
 
-Type
-TypeContext::functionType(Type returnType, std::vector<Type> argTypes)
-{
-    for (auto& ti : typeInfos_) {
-        if (ti->kind() != TypeKind::function)
-            continue;
-
-        auto& fti = static_cast<FunctionTypeInfo&>(*ti);
-        if (fti.returnType() == returnType && fti.argumentTypes() == argTypes)
-            return &fti;
-    }
-    typeInfos_.push_back(
-      std::unique_ptr<TypeInfo, TypeInfoDeleter>{new FunctionTypeInfo{returnType, std::move(argTypes)}});
-    return typeInfos_.back().get();
-}
-
 bool
 isComposite(Type t) noexcept
 {
@@ -136,7 +110,6 @@ isComposite(Type t) noexcept
         case TypeKind::integer:
         case TypeKind::floatingPoint:
         case TypeKind::pointer:
-        case TypeKind::function:
             return false;
     }
 }

@@ -6,9 +6,11 @@
 
 namespace algrad {
 namespace compiler {
+namespace hir {
 class Program;
+}
 
-std::unique_ptr<Program> loadSPIRV(std::uint32_t const* b, std::uint32_t const* e, std::string const& entryName);
+std::unique_ptr<hir::Program> loadSPIRV(std::uint32_t const* b, std::uint32_t const* e, std::string const& entryName);
 }
 }
 
