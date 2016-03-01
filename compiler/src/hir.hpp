@@ -53,7 +53,7 @@ extern InstFlags const defaultInstFlags[];
 class Def
 {
   public:
-    Def(OpCode opCode, int id, Type type, InstFlags flags) noexcept;
+    Def(OpCode opCode, int id, Type type) noexcept;
 
     OpCode opCode() const noexcept;
 
@@ -61,7 +61,6 @@ class Def
 
     int id() const noexcept;
 
-    InstFlags flags() const noexcept;
   protected:
     Def(Def const&) noexcept = default;
 
@@ -71,7 +70,6 @@ class Def
 
   protected:
     std::uint16_t operandCount_;
-    InstFlags flags_;
     int id_;
     Type type_;
 };
@@ -113,7 +111,11 @@ class Inst final : public Def
 
     void identify(Def* def);
 
+    InstFlags flags() const noexcept;
+
   private:
+    InstFlags flags_;
+
     enum
     {
         internalOperandCount = 3
@@ -140,7 +142,6 @@ class BasicBlock
     std::vector<std::unique_ptr<Inst>> instructions_;
     int id_;
 };
-
 
 enum class ProgramType
 {
@@ -183,8 +184,7 @@ class Program
 
     BasicBlock& initialBlock() noexcept;
 
-
-private:
+  private:
     ProgramType type_;
     int nextDefIndex_;
     int nextBlockIndex_;

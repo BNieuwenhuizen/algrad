@@ -18,7 +18,7 @@ Def::~Def() noexcept
 }
 
 Inst::Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept
-  : Def{opCode, id, type, defaultInstFlags[static_cast<std::uint16_t>(opCode)]}
+  : Def{opCode, id, type}, flags_{defaultInstFlags[static_cast<std::uint16_t>(opCode)]}
 {
     operandCount_ = operandCount;
     if (operandCount_ > internalOperandCount)
@@ -26,7 +26,7 @@ Inst::Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept
 }
 
 Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept
-  : Def{opCode, id, type, flags}
+  : Def{opCode, id, type}, flags_{flags}
 {
     operandCount_ = operandCount;
     if (operandCount_ > internalOperandCount)

@@ -28,8 +28,7 @@ constexpr bool operator!(InstFlags flags) noexcept
     return flags == InstFlags::none;
 }
 
-inline Def::Def(OpCode opCode, int id, Type type, InstFlags flags) noexcept : opCode_{opCode},
-                                                                              flags_{flags},
+inline Def::Def(OpCode opCode, int id, Type type) noexcept : opCode_{opCode},
                                                                               id_{id},
                                                                               type_{type}
 {
@@ -53,20 +52,14 @@ Def::id() const noexcept
     return id_;
 }
 
-inline InstFlags
-Def::flags() const noexcept
-{
-    return flags_;
-}
-
 inline ScalarConstant::ScalarConstant(OpCode opCode, int id, Type type, std::uint64_t v) noexcept
-  : Def{opCode, id, type, InstFlags::none}
+  : Def{opCode, id, type}
 {
     integerValue_ = v;
 }
 
 inline ScalarConstant::ScalarConstant(OpCode opCode, int id, Type type, double v) noexcept
-  : Def{opCode, id, type, InstFlags::none}
+  : Def{opCode, id, type}
 {
     floatValue_ = v;
 }
@@ -91,6 +84,13 @@ Inst::operands() noexcept
     else
         return {externalOperands_, externalOperands_ + operandCount_};
 }
+
+inline InstFlags
+Inst::flags() const noexcept
+{
+    return flags_;
+}
+
 
 inline int
 BasicBlock::id() const noexcept
