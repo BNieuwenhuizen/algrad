@@ -115,6 +115,18 @@ BasicBlock::instructions() noexcept
     return instructions_;
 }
 
+inline std::vector<BasicBlock*>&
+BasicBlock::successors() noexcept
+{
+    return successors_;
+}
+
+inline std::vector<BasicBlock*> const&
+BasicBlock::predecessors() noexcept
+{
+    return predecessors_;
+}
+
 inline ProgramType
 Program::type() const noexcept
 {

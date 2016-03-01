@@ -8,6 +8,7 @@
 #include "spirv.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <iostream>
 #include <unordered_map>
 
@@ -241,6 +242,35 @@ visitType(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builde
     builder.objects[id].tag = SPIRVObject::Tag::type;
     builder.objects[id].type = type;
 }
+void
+insertConstant(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder)
+{
+    auto id = insn[2];
+    auto type = getType(builder, insn[1]);
+    hir::ScalarConstant* def;
+    if (type->kind() == TypeKind::integer || type->kind() == TypeKind::floatingPoint) {
+        switch (static_cast<ScalarTypeInfo const*>(type)->width()) {
+            case 16: {
+                std::uint16_t v;
+                std::memcpy(&v, &insn[3], 2);
+                def = builder.program->getScalarConstant(type, static_cast<std::uint64_t>(v));
+            } break;
+            case 32: {
+                std::uint32_t v;
+                std::memcpy(&v, &insn[3], 4);
+                def = builder.program->getScalarConstant(type, static_cast<std::uint64_t>(v));
+            } break;
+            case 64: {
+                std::uint64_t v;
+                std::memcpy(&v, &insn[3], 8);
+                def = builder.program->getScalarConstant(type, static_cast<std::uint64_t>(v));
+            } break;
+        }
+    } else
+        std::terminate();
+    builder.objects[id].tag = SPIRVObject::Tag::def;
+    builder.objects[id].def = def;
+}
 
 bool
 visitGlobals(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder)
@@ -255,9 +285,11 @@ visitGlobals(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& bui
         case spv::Op::OpTypeFunction:
             visitType(insn, builder);
             return true;
+        case spv::Op::OpConstant:
+            insertConstant(insn, builder);
+            return true;
         case spv::Op::OpConstantFalse:
         case spv::Op::OpConstantTrue:
-        case spv::Op::OpConstant:
         case spv::Op::OpConstantNull:
         case spv::Op::OpConstantComposite:
         case spv::Op::OpConstantSampler:
@@ -297,6 +329,8 @@ previsitFunctions(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder
 struct FunctionBuilder
 {
     BasicBlock* currentBlock;
+    BasicBlock* startBlock;
+    std::unordered_map<unsigned, BasicBlock*> blocks;
 };
 
 Def*
@@ -355,6 +389,61 @@ createShuffleInstruction(boost::iterator_range<std::uint32_t const*> insn, SPIRV
     fb.currentBlock->insertBack(std::move(newInsn));
 }
 
+void
+visitLabel(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
+{
+    auto id = insn[1];
+    if (!fb.currentBlock) {
+        fb.currentBlock = fb.startBlock;
+        fb.blocks[id] = fb.startBlock;
+        return;
+    }
+
+    auto it = fb.blocks.find(id);
+    if (it == fb.blocks.end()) {
+        hir::BasicBlock& b = builder.program->insertBack(builder.program->createBasicBlock());
+        it = fb.blocks.insert({id, &b}).first;
+    }
+    fb.currentBlock = it->second;
+}
+
+hir::BasicBlock&
+getBlock(SPIRVBuilder& builder, FunctionBuilder& fb, unsigned id)
+{
+    auto it = fb.blocks.find(id);
+    if (it == fb.blocks.end()) {
+        hir::BasicBlock& b = builder.program->insertBack(builder.program->createBasicBlock());
+        it = fb.blocks.insert({id, &b}).first;
+    }
+    return *it->second;
+}
+
+void
+visitBranch(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
+{
+    auto& block = getBlock(builder, fb, insn[1]);
+
+    fb.currentBlock->insertBack(builder.program->createDef<Inst>(hir::OpCode::branch, &voidType, 0));
+    fb.currentBlock->successors().push_back(&block);
+
+    block.insertPredecessor(fb.currentBlock);
+}
+
+void
+visitBranchConditional(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
+{
+    auto& trueBlock = getBlock(builder, fb, insn[2]);
+    auto& falseBlock = getBlock(builder, fb, insn[3]);
+
+    auto& inst = fb.currentBlock->insertBack(builder.program->createDef<Inst>(hir::OpCode::condBranch, &voidType, 1));
+    inst.setOperand(0, getDef(builder, insn[1]));
+
+    fb.currentBlock->successors().push_back(&trueBlock);
+    fb.currentBlock->successors().push_back(&falseBlock);
+    trueBlock.insertPredecessor(fb.currentBlock);
+    falseBlock.insertPredecessor(fb.currentBlock);
+}
+
 bool
 visitBody(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
 {
@@ -363,18 +452,35 @@ visitBody(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builde
         case spv::Op::OpFunctionEnd:
             return true;
         case spv::Op::OpLabel:
+            visitLabel(insn, builder, fb);
+            return true;
+        case spv::Op::OpBranchConditional:
+            visitBranchConditional(insn, builder, fb);
+            return true;
+        case spv::Op::OpBranch:
+            visitBranch(insn, builder, fb);
             return true;
         case spv::Op::OpReturn:
         case spv::Op::OpReturnValue:
             return true;
-        case spv::Op::OpVectorShuffle:
-            createShuffleInstruction(insn, builder, fb);
+        case spv::Op::OpAccessChain:
+            createSimpleInstruction(insn, builder, fb, OpCode::accessChain);
             return true;
         case spv::Op::OpLoad:
             createSimpleInstruction(insn, builder, fb, OpCode::load);
             return true;
         case spv::Op::OpStore:
             createStoreInstruction(insn, builder, fb);
+            return true;
+        case spv::Op::OpVectorShuffle:
+            createShuffleInstruction(insn, builder, fb);
+            return true;
+        case spv::Op::OpFOrdLessThan:
+            createSimpleInstruction(insn, builder, fb, OpCode::orderedLessThan);
+            return true;
+        case spv::Op::OpSelectionMerge:
+        case spv::Op::OpLoopMerge:
+            /* unused */
             return true;
         default:
             assert(0 && "unsupported instruction");
@@ -387,7 +493,8 @@ visitFunction(SPIRVBuilder& builder, BasicBlock& startBlock, unsigned id, std::v
 {
     auto loc = builder.functionStarts[id];
     FunctionBuilder fb;
-    fb.currentBlock = &startBlock;
+    fb.startBlock = &startBlock;
+    fb.currentBlock = nullptr;
     visitSPIRV(boost::iterator_range<std::uint32_t const*>{loc.first, loc.second}, visitBody, builder, fb);
 
     return *fb.currentBlock;

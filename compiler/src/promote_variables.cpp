@@ -1,6 +1,8 @@
 #include "hir.hpp"
+#include "hir_inlines.hpp"
 
 #include <iostream>
+#include <unordered_map>
 
 namespace algrad {
 namespace compiler {
@@ -109,39 +111,76 @@ void
 promoteVariables(Program& program)
 {
     splitVariables(program);
-    std::vector<bool> canPromote(program.defIdCount());
-    std::vector<Def*> promotedValues(program.defIdCount());
+    std::vector<int> canPromote(program.defIdCount(), -1);
+    int idx = 0;
     for (auto& var : program.variables()) {
-        canPromote[var->id()] = true;
+        canPromote[var->id()] = idx++;
     }
+
     for (auto& bb : program.basicBlocks()) {
         visitInstructions(*bb, [&canPromote](Inst& insn) {
             if (insn.opCode() == OpCode::store)
-                canPromote[insn.getOperand(1)->id()] = false;
+                canPromote[insn.getOperand(1)->id()] = -1;
             else if (insn.opCode() != OpCode::load) {
                 auto operandCount = insn.operandCount();
                 for (std::size_t j = 0; j < operandCount; ++j) {
-                    canPromote[insn.getOperand(j)->id()] = false;
+                    canPromote[insn.getOperand(j)->id()] = -1;
                 }
             }
         });
     }
+
+    std::unordered_map<hir::BasicBlock*, std::vector<hir::Def*>> defsOut;
     for (auto& bb : program.basicBlocks()) {
+        std::vector<hir::Def*> promotedValues(idx);
+
+        if (!bb->predecessors().empty())
+            promotedValues = defsOut[bb->predecessors()[0]];
+        std::vector<std::unique_ptr<hir::Inst>> phis;
+        if (bb->predecessors().size() > 1) {
+            for (std::size_t i = 0; i < promotedValues.size(); ++i) {
+                phis.push_back(program.createDef<Inst>(
+                  OpCode::phi, static_cast<PointerTypeInfo const*>(program.variables()[i]->type())->pointeeType(), bb->predecessors().size()));
+
+                promotedValues[i] = phis.back().get();
+            }
+        }
         visitInstructions(*bb, [&canPromote, &promotedValues](Inst& insn) {
             if (insn.opCode() == OpCode::store) {
                 auto baseId = insn.getOperand(0)->id();
-                if (canPromote[baseId]) {
-                    promotedValues[baseId] = insn.getOperand(1);
+                if (canPromote[baseId] >= 0) {
+                    promotedValues[canPromote[baseId]] = insn.getOperand(1);
                     insn.identify(nullptr);
                 }
             } else if (insn.opCode() == OpCode::load) {
                 auto baseId = insn.getOperand(0)->id();
-                if (canPromote[baseId]) {
-                    insn.identify(promotedValues[baseId]);
+                if (canPromote[baseId] >= 0) {
+                    insn.identify(promotedValues[canPromote[baseId]]);
                 }
             }
         });
+
+        if (!phis.empty())
+            bb->instructions().insert(bb->instructions().begin(), make_move_iterator(phis.begin()),
+                                      make_move_iterator(phis.end()));
+
+        defsOut[bb.get()] = promotedValues;
     }
+    for (auto& bb : program.basicBlocks()) {
+        auto& defs = defsOut[bb.get()];
+        for (auto succ : bb->successors()) {
+            if (succ->predecessors().size() <= 1)
+                continue;
+            unsigned idx = 0;
+            while (succ->predecessors()[idx] != bb.get())
+                ++idx;
+
+	    for(std::size_t i = 0; i < defs.size(); ++i) {
+		    succ->instructions()[i]->setOperand(idx, defs[i]);
+	    }
+        }
+    }
+
     program.variables().erase(std::remove_if(program.variables().begin(), program.variables().end(),
                                              [&canPromote](auto& v) { return canPromote[v->id()]; }),
                               program.variables().end());

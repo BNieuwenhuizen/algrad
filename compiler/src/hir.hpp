@@ -20,13 +20,17 @@ namespace hir {
     _(parameter, InstFlags::none)                                                                                      \
     _(identity, InstFlags::none)                                                                                       \
     _(variable, InstFlags::none)                                                                                       \
+    _(phi, InstFlags::none)                                                                                            \
     _(ret, InstFlags::isControlInstruction)                                                                            \
+    _(branch, InstFlags::isControlInstruction)                                                                         \
+    _(condBranch, InstFlags::isControlInstruction)                                                                     \
     _(accessChain, InstFlags::none)                                                                                    \
     _(load, InstFlags::none)                                                                                           \
     _(store, InstFlags::hasSideEffects)                                                                                \
     _(compositeConstruct, InstFlags::none)                                                                             \
     _(compositeExtract, InstFlags::none)                                                                               \
     _(vectorShuffle, InstFlags::none)                                                                                  \
+    _(orderedLessThan, InstFlags::none)                                                                                \
     _(gcnInterpolate, InstFlags::none)                                                                                 \
     _(gcnExport, InstFlags::hasSideEffects)
 
@@ -141,9 +145,16 @@ class BasicBlock
 
     std::vector<std::unique_ptr<Inst>>& instructions() noexcept;
 
+    std::vector<BasicBlock*>& successors() noexcept;
+    std::vector<BasicBlock*> const& predecessors() noexcept;
+
+    std::size_t insertPredecessor(BasicBlock*);
+
   private:
     std::vector<std::unique_ptr<Inst>> instructions_;
     int id_;
+
+    std::vector<BasicBlock *> successors_, predecessors_;
 };
 
 enum class ProgramType

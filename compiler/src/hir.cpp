@@ -103,6 +103,14 @@ BasicBlock::insertBack(std::unique_ptr<Inst> insn)
     return ret;
 }
 
+
+std::size_t BasicBlock::insertPredecessor(BasicBlock* pred) {
+	for(std::size_t i = 0; i < predecessors_.size(); ++i)
+		if(predecessors_[i] == pred)
+			return i;
+	predecessors_.push_back(pred);
+	return predecessors_.size() - 1;
+}
 Program::Program(ProgramType type)
   : type_{type}
   , nextDefIndex_{0}
@@ -205,7 +213,7 @@ print(std::ostream& os, Program& program)
     for (auto& bb : program.basicBlocks()) {
         os << "  block " << bb->id() << ":\n";
         for (auto& insn : bb->instructions()) {
-            os << "    ";
+            os << "     ";
             if (insn->type() != &voidType)
                 os << "%" << insn->id() << " = ";
             os << toString(insn->opCode());
@@ -219,6 +227,11 @@ print(std::ostream& os, Program& program)
             }
             os << "\n";
         }
+        os << "    successors";
+	for(auto succ : bb->successors()) {
+		os << " " << succ->id();
+	}
+	os << "\n";
     }
 }
 }
