@@ -23,7 +23,7 @@ main(int argc, char* argv[])
     algrad::compiler::lowerIO(*prog);
     print(std::cout, *prog);
 
-    //auto lprog = algrad::compiler::selectInstructions(*prog);
-    //algrad::compiler::allocateRegisters(*lprog);
-    //print(std::cout, *lprog);
+    auto lprog = algrad::compiler::selectInstructions(*prog);
+    algrad::compiler::allocateRegisters(*lprog);
+    print(std::cout, *lprog);
 }
