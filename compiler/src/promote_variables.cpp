@@ -17,9 +17,11 @@ visitInstructions(BasicBlock& bb, F&& callback)
 
     for (unsigned i = 0; i < insns.size(); ++i) {
         auto& insn = insns[i];
-        for (auto& p : insn->operands()) {
-            if (p->opCode() == OpCode::identity)
-                p = static_cast<Inst*>(p)->operands()[0];
+        auto operandCount = insn->operandCount();
+        for (std::size_t j = 0; j < operandCount; ++j) {
+            auto op = insn->getOperand(j);
+            if (op->opCode() == OpCode::identity)
+                insn->setOperand(j, static_cast<Inst*>(op)->getOperand(0));
         }
         callback(*insn);
         if (insn->opCode() != OpCode::identity) {
@@ -43,15 +45,16 @@ splitVariables(Program& program)
     for (auto& bb : program.basicBlocks()) {
         visitInstructions(*bb, [&cannotBeSplit](Inst& insn) {
             if (insn.opCode() == OpCode::accessChain) {
-                if (insn.operands().size() < 2 || insn.operands()[1]->opCode() != OpCode::constant)
-                    cannotBeSplit[insn.operands()[0]->id()] = true;
+                if (insn.operandCount() < 2 || insn.getOperand(1)->opCode() != OpCode::constant) {
+                    cannotBeSplit[insn.getOperand(0)->id()] = true;
+                }
             } else {
-
-                for (auto op : insn.operands()) {
-                    if (op->id() == 1) {
-                        std::cout << " " << insn.id() << "\n";
+                std::size_t operandCount = insn.operandCount();
+                for (std::size_t i = 0; i < operandCount; ++i) {
+                    if (insn.getOperand(i)->id() == 0) {
+                        std::cout << insn.id() << " " << static_cast<unsigned>(insn.opCode()) << "\n";
                     }
-                    cannotBeSplit[op->id()] = true;
+                    cannotBeSplit[insn.getOperand(i)->id()] = true;
                 }
             }
         });
@@ -64,7 +67,6 @@ splitVariables(Program& program)
     for (auto& v : oldVars) {
         if (!cannotBeSplit[v->id()]) {
             changed = true;
-            std::cout << "split " << v->id() << "\n";
 
             newVarOffsets[v->id()] = newVars.size();
             auto type = static_cast<PointerTypeInfo const*>(v->type())->pointeeType();
@@ -76,21 +78,25 @@ splitVariables(Program& program)
                 program.variables().push_back(std::move(newVar));
             }
 
-        } else
+        } else {
             program.variables().push_back(std::move(v));
+        }
     }
 
     for (auto& bb : program.basicBlocks()) {
         visitInstructions(*bb, [&cannotBeSplit, &newVars, &newVarOffsets](Inst& insn) {
-            if (insn.opCode() == OpCode::accessChain && newVarOffsets[insn.operands()[0]->id()] >= 0) {
-                auto idx = static_cast<ScalarConstant*>(insn.operands()[1])->integerValue();
-                auto replacement = newVars[newVarOffsets[insn.operands()[0]->id()] + idx];
+            if (insn.opCode() == OpCode::accessChain) {
+                auto baseId = insn.getOperand(0)->id();
+                if (newVarOffsets[baseId] >= 0) {
+                    auto idx = static_cast<ScalarConstant*>(insn.getOperand(1))->integerValue();
+                    auto replacement = newVars[newVarOffsets[baseId] + idx];
 
-                if (insn.operands().size() == 2) {
-                    insn.identify(replacement);
-                } else {
-                    insn.operands()[0] = newVars[newVarOffsets[insn.operands()[0]->id()] + idx];
-                    insn.eraseOperand(1);
+                    if (insn.operandCount() == 2) {
+                        insn.identify(replacement);
+                    } else {
+                        insn.setOperand(0, newVars[newVarOffsets[baseId] + idx]);
+                        insn.eraseOperand(1);
+                    }
                 }
             }
         });
@@ -111,23 +117,27 @@ promoteVariables(Program& program)
     for (auto& bb : program.basicBlocks()) {
         visitInstructions(*bb, [&canPromote](Inst& insn) {
             if (insn.opCode() == OpCode::store)
-                canPromote[insn.operands()[1]->id()] = false;
+                canPromote[insn.getOperand(1)->id()] = false;
             else if (insn.opCode() != OpCode::load) {
-                for (auto op : insn.operands())
-                    canPromote[op->id()] = false;
+                auto operandCount = insn.operandCount();
+                for (std::size_t j = 0; j < operandCount; ++j) {
+                    canPromote[insn.getOperand(j)->id()] = false;
+                }
             }
         });
     }
     for (auto& bb : program.basicBlocks()) {
         visitInstructions(*bb, [&canPromote, &promotedValues](Inst& insn) {
             if (insn.opCode() == OpCode::store) {
-                if (canPromote[insn.operands()[0]->id()]) {
-                    promotedValues[insn.operands()[0]->id()] = insn.operands()[1];
+                auto baseId = insn.getOperand(0)->id();
+                if (canPromote[baseId]) {
+                    promotedValues[baseId] = insn.getOperand(1);
                     insn.identify(nullptr);
                 }
             } else if (insn.opCode() == OpCode::load) {
-                if (canPromote[insn.operands()[0]->id()]) {
-                    insn.identify(promotedValues[insn.operands()[0]->id()]);
+                auto baseId = insn.getOperand(0)->id();
+                if (canPromote[baseId]) {
+                    insn.identify(promotedValues[baseId]);
                 }
             }
         });

@@ -19,9 +19,9 @@ lowerInput(Program& program)
     for (auto& p : params) {
         *p = Inst{OpCode::gcnInterpolate, p->id(), &float32Type, 5};
         for (int i = 0; i < 3; ++i)
-            p->operands()[i] = program.params()[i].get();
-        p->operands()[3] = program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx / 4));
-        p->operands()[4] = program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx % 4));
+            p->setOperand(i, program.params()[i].get());
+        p->setOperand(3, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx / 4)));
+        p->setOperand(4, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx % 4)));
         ++idx;
     }
 
@@ -33,23 +33,24 @@ void
 lowerOutput(Program& program)
 {
     auto& endBlock = *program.basicBlocks().back();
-    if (endBlock.instructions().back()->operands().empty())
+    if (endBlock.instructions().back()->operandCount() == 0)
         std::abort();
     auto ret = std::move(endBlock.instructions().back());
     endBlock.instructions().pop_back();
     if (ret->opCode() != OpCode::ret)
         std::terminate();
 
-    if (ret->operands().size() & 3)
+    if (ret->operandCount() & 3)
         std::terminate();
 
-    for (int i = 0; i + 4 <= ret->operands().size(); ++i) {
+    auto operandCount = ret->operandCount();
+    for (int i = 0; i + 4 <= operandCount; ++i) {
         auto& exportInsn = endBlock.insertBack(program.createDef<Inst>(OpCode::gcnExport, &voidType, 7));
-        exportInsn.operands()[0] = program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(15));
-        exportInsn.operands()[1] = program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(i / 4));
-        exportInsn.operands()[2] = program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(0));
+        exportInsn.setOperand(0, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(15)));
+        exportInsn.setOperand(1, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(i / 4)));
+        exportInsn.setOperand(2, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(0)));
         for (int j = 0; j < 4; ++j)
-            exportInsn.operands()[3 + j] = ret->operands()[i + j];
+            exportInsn.setOperand(3 + j, ret->getOperand(i + j));
     }
 
     endBlock.insertBack(program.createDef<Inst>(OpCode::ret, &voidType, 0));

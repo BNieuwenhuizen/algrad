@@ -318,7 +318,7 @@ createSimpleInstruction(boost::iterator_range<std::uint32_t const*> insn, SPIRVB
     auto id = insn.begin()[2];
     auto newInsn = builder.program->createDef<Inst>(opCode, type, insn.size() - 3);
     for (unsigned i = 0; i + 3 < insn.size(); ++i)
-        newInsn->operands()[i] = getDef(builder, insn.begin()[i + 3]);
+        newInsn->setOperand(i, getDef(builder, insn.begin()[i + 3]));
 
     builder.objects[id].tag = SPIRVObject::Tag::def;
     builder.objects[id].def = newInsn.get();
@@ -331,7 +331,26 @@ createStoreInstruction(boost::iterator_range<std::uint32_t const*> insn, SPIRVBu
 {
     auto newInsn = builder.program->createDef<Inst>(OpCode::store, &voidType, 2);
     for (unsigned i = 0; i < 2; ++i)
-        newInsn->operands()[i] = getDef(builder, insn.begin()[i + 1]);
+        newInsn->setOperand(i, getDef(builder, insn.begin()[i + 1]));
+
+    fb.currentBlock->insertBack(std::move(newInsn));
+}
+
+void
+createShuffleInstruction(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
+{
+    auto type = getType(builder, insn.begin()[1]);
+    auto id = insn.begin()[2];
+    auto newInsn = builder.program->createDef<Inst>(hir::OpCode::vectorShuffle, type, insn.size() - 3);
+    for (unsigned i = 0; i < 2; ++i)
+        newInsn->setOperand(i, getDef(builder, insn.begin()[i + 3]));
+
+    for (unsigned i = 2; i + 3 < insn.size(); ++i)
+        newInsn->setOperand(
+          i, builder.program->getScalarConstant(&int32Type, static_cast<std::uint64_t>(insn.begin()[i + 3])));
+
+    builder.objects[id].tag = SPIRVObject::Tag::def;
+    builder.objects[id].def = newInsn.get();
 
     fb.currentBlock->insertBack(std::move(newInsn));
 }
@@ -347,6 +366,9 @@ visitBody(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builde
             return true;
         case spv::Op::OpReturn:
         case spv::Op::OpReturnValue:
+            return true;
+        case spv::Op::OpVectorShuffle:
+            createShuffleInstruction(insn, builder, fb);
             return true;
         case spv::Op::OpLoad:
             createSimpleInstruction(insn, builder, fb, OpCode::load);
@@ -403,18 +425,19 @@ createProlog(SPIRVBuilder& builder)
         if (type->kind() == TypeKind::vector) {
             auto elemType = static_cast<VectorTypeInfo const*>(type)->element();
             for (unsigned i = 0; i < static_cast<VectorTypeInfo const*>(type)->size(); ++i) {
-                auto& value = builder.program->appendParam(builder.program->createDef<Inst>(OpCode::parameter, elemType, 0));
+                auto& value =
+                  builder.program->appendParam(builder.program->createDef<Inst>(OpCode::parameter, elemType, 0));
 
                 auto elemPtrType = builder.program->types().pointerType(elemType, StorageKind::invocation);
                 auto& accessChain =
                   bb.insertBack(builder.program->createDef<Inst>(OpCode::accessChain, elemPtrType, 2));
-                accessChain.operands()[0] = vi.second;
-                accessChain.operands()[1] =
-                  builder.program->getScalarConstant(&int32Type, static_cast<std::uint64_t>(i));
+                accessChain.setOperand(0, vi.second);
+                accessChain.setOperand(1,
+                                       builder.program->getScalarConstant(&int32Type, static_cast<std::uint64_t>(i)));
 
                 auto& store = bb.insertBack(builder.program->createDef<Inst>(OpCode::store, &voidType, 2));
-                store.operands()[0] = &accessChain;
-                store.operands()[1] = &value;
+                store.setOperand(0, &accessChain);
+                store.setOperand(1, &value);
             }
         } else
             std::abort();
@@ -435,12 +458,12 @@ createEpilog(SPIRVBuilder& builder, BasicBlock& bb)
                 auto elemPtrType = builder.program->types().pointerType(elemType, StorageKind::invocation);
                 auto& accessChain =
                   bb.insertBack(builder.program->createDef<Inst>(OpCode::accessChain, elemPtrType, 2));
-                accessChain.operands()[0] = vi.second;
-                accessChain.operands()[1] =
-                  builder.program->getScalarConstant(&int32Type, static_cast<std::uint64_t>(i));
+                accessChain.setOperand(0, vi.second);
+                accessChain.setOperand(1,
+                                       builder.program->getScalarConstant(&int32Type, static_cast<std::uint64_t>(i)));
 
                 auto& load = bb.insertBack(builder.program->createDef<Inst>(OpCode::load, elemType, 1));
-                load.operands()[0] = &accessChain;
+                load.setOperand(0, &accessChain);
                 defs.push_back(&load);
             }
         } else
@@ -448,7 +471,7 @@ createEpilog(SPIRVBuilder& builder, BasicBlock& bb)
     }
     auto& ret = bb.insertBack(builder.program->createDef<Inst>(OpCode::ret, &voidType, defs.size()));
     for (unsigned i = 0; i < defs.size(); ++i) {
-        ret.operands()[i] = defs[i];
+        ret.setOperand(i, defs[i]);
     }
 }
 

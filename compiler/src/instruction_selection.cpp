@@ -1,7 +1,7 @@
 #include "hir.hpp"
+#include "hir_inlines.hpp"
 #include "lir.hpp"
 #include <iostream>
-#include "hir_inlines.hpp"
 
 namespace algrad {
 namespace compiler {
@@ -12,23 +12,25 @@ std::vector<RegClass>
 computeRegisterClasses(Program& program)
 {
     std::vector<RegClass> regClasses(program.defIdCount(), RegClass::sgpr);
-        regClasses[program.params()[0]->id()] = RegClass::sgpr;
-        regClasses[program.params()[1]->id()] = RegClass::vgpr;
-        regClasses[program.params()[2]->id()] = RegClass::vgpr;
-        for (auto& bb : program.basicBlocks()) {
-            for (auto& insn : bb->instructions()) {
-                if (insn->type() == &voidType)
-                    continue;
+    regClasses[program.params()[0]->id()] = RegClass::sgpr;
+    regClasses[program.params()[1]->id()] = RegClass::vgpr;
+    regClasses[program.params()[2]->id()] = RegClass::vgpr;
+    for (auto& bb : program.basicBlocks()) {
+        for (auto& insn : bb->instructions()) {
+            if (insn->type() == &voidType)
+                continue;
 
-                switch (insn->opCode()) {
-                    default: {
-                        for (auto op : insn->operands())
-                            if (regClasses[op->id()] == RegClass::vgpr)
-                                regClasses[insn->id()] = RegClass::vgpr;
+            switch (insn->opCode()) {
+                default: {
+                    auto operandCount = insn->operandCount();
+                    for (std::size_t i = 0; i < operandCount; ++i) {
+                        if (regClasses[insn->getOperand(i)->id()] == RegClass::vgpr)
+                            regClasses[insn->id()] = RegClass::vgpr;
                     }
                 }
             }
         }
+    }
     return regClasses;
 }
 
@@ -94,23 +96,23 @@ selectInstructions(Program& program)
                     LReg tmp{lprog->allocateId(), RegClass::vgpr, 4};
 
                     newInsn1.args()[0] = LArg{tmp, LArg::Role::def};
-                    newInsn1.args()[1] = LArg{getReg(ctx, *insn.operands()[1], RegClass::vgpr, 4), LArg::Role::use};
+                    newInsn1.args()[1] = LArg{getReg(ctx, *insn.getOperand(1), RegClass::vgpr, 4), LArg::Role::use};
                     newInsn1.args()[2] =
-                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.operands()[3])->integerValue());
+                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.getOperand(3))->integerValue());
                     newInsn1.args()[3] =
-                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.operands()[4])->integerValue());
+                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.getOperand(4))->integerValue());
                     newInsn1.args()[4] =
-                      LArg{getReg(ctx, *insn.operands()[0], RegClass::sgpr, 4), LArg::Role::use, PhysReg{124}};
+                      LArg{getReg(ctx, *insn.getOperand(0), RegClass::sgpr, 4), LArg::Role::use, PhysReg{124}};
 
                     newInsn2.args()[0] = LArg{getReg(ctx, insn, RegClass::vgpr, 4), LArg::Role::def};
                     newInsn2.args()[1] = LArg{tmp, LArg::Role::use};
-                    newInsn2.args()[2] = LArg{getReg(ctx, *insn.operands()[2], RegClass::vgpr, 4), LArg::Role::use};
+                    newInsn2.args()[2] = LArg{getReg(ctx, *insn.getOperand(2), RegClass::vgpr, 4), LArg::Role::use};
                     newInsn2.args()[3] =
-                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.operands()[3])->integerValue());
+                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.getOperand(3))->integerValue());
                     newInsn2.args()[4] =
-                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.operands()[4])->integerValue());
+                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.getOperand(4))->integerValue());
                     newInsn2.args()[5] =
-                      LArg{getReg(ctx, *insn.operands()[0], RegClass::sgpr, 4), LArg::Role::use, PhysReg{124}};
+                      LArg{getReg(ctx, *insn.getOperand(0), RegClass::sgpr, 4), LArg::Role::use, PhysReg{124}};
 
                     lbb.instructions().emplace_back(std::move(newInsn2));
                     lbb.instructions().emplace_back(std::move(newInsn1));
@@ -118,17 +120,17 @@ selectInstructions(Program& program)
                 case OpCode::gcnExport: {
                     LInst newInsn{LOpCode::exp, 9};
                     newInsn.args()[0] =
-                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.operands()[0])->integerValue());
+                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.getOperand(0))->integerValue());
                     newInsn.args()[1] =
-                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.operands()[1])->integerValue());
+                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.getOperand(1))->integerValue());
                     newInsn.args()[2] =
-                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.operands()[2])->integerValue());
+                      LArg::int32Constant(static_cast<ScalarConstant*>(insn.getOperand(2))->integerValue());
                     newInsn.args()[3] = LArg::int32Constant(1);
                     newInsn.args()[4] = LArg::int32Constant(1);
-                    newInsn.args()[5] = LArg{getReg(ctx, *insn.operands()[3], RegClass::vgpr, 4), LArg::Role::use};
-                    newInsn.args()[6] = LArg{getReg(ctx, *insn.operands()[4], RegClass::vgpr, 4), LArg::Role::use};
-                    newInsn.args()[7] = LArg{getReg(ctx, *insn.operands()[5], RegClass::vgpr, 4), LArg::Role::use};
-                    newInsn.args()[8] = LArg{getReg(ctx, *insn.operands()[6], RegClass::vgpr, 4), LArg::Role::use};
+                    newInsn.args()[5] = LArg{getReg(ctx, *insn.getOperand(3), RegClass::vgpr, 4), LArg::Role::use};
+                    newInsn.args()[6] = LArg{getReg(ctx, *insn.getOperand(4), RegClass::vgpr, 4), LArg::Role::use};
+                    newInsn.args()[7] = LArg{getReg(ctx, *insn.getOperand(5), RegClass::vgpr, 4), LArg::Role::use};
+                    newInsn.args()[8] = LArg{getReg(ctx, *insn.getOperand(6), RegClass::vgpr, 4), LArg::Role::use};
 
                     lbb.instructions().emplace_back(std::move(newInsn));
                 } break;

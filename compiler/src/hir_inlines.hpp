@@ -28,9 +28,7 @@ constexpr bool operator!(InstFlags flags) noexcept
     return flags == InstFlags::none;
 }
 
-inline Def::Def(OpCode opCode, int id, Type type) noexcept : opCode_{opCode},
-                                                                              id_{id},
-                                                                              type_{type}
+inline Def::Def(OpCode opCode, int id, Type type) noexcept : opCode_{opCode}, id_{id}, type_{type}
 {
 }
 
@@ -58,8 +56,7 @@ inline ScalarConstant::ScalarConstant(OpCode opCode, int id, Type type, std::uin
     integerValue_ = v;
 }
 
-inline ScalarConstant::ScalarConstant(OpCode opCode, int id, Type type, double v) noexcept
-  : Def{opCode, id, type}
+inline ScalarConstant::ScalarConstant(OpCode opCode, int id, Type type, double v) noexcept : Def{opCode, id, type}
 {
     floatValue_ = v;
 }
@@ -76,13 +73,28 @@ ScalarConstant::integerValue() const noexcept
     return integerValue_;
 }
 
-inline boost::iterator_range<Def**>
-Inst::operands() noexcept
+inline std::size_t
+Inst::operandCount() const noexcept
+{
+    return operandCount_;
+}
+
+inline Def*
+Inst::getOperand(std::size_t index) const noexcept
 {
     if (operandCount_ <= internalOperandCount)
-        return {internalOperands_, internalOperands_ + operandCount_};
+        return internalOperands_[index];
     else
-        return {externalOperands_, externalOperands_ + operandCount_};
+        return externalOperands_[index];
+}
+
+inline void
+Inst::setOperand(std::size_t index, Def* def) noexcept
+{
+    if (operandCount_ <= internalOperandCount)
+        internalOperands_[index] = def;
+    else
+        externalOperands_[index] = def;
 }
 
 inline InstFlags
@@ -90,7 +102,6 @@ Inst::flags() const noexcept
 {
     return flags_;
 }
-
 
 inline int
 BasicBlock::id() const noexcept

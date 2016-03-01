@@ -18,15 +18,16 @@ Def::~Def() noexcept
 }
 
 Inst::Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept
-  : Def{opCode, id, type}, flags_{defaultInstFlags[static_cast<std::uint16_t>(opCode)]}
+  : Def{opCode, id, type},
+    flags_{defaultInstFlags[static_cast<std::uint16_t>(opCode)]}
 {
     operandCount_ = operandCount;
     if (operandCount_ > internalOperandCount)
         externalOperands_ = new Def*[operandCount_];
 }
 
-Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept
-  : Def{opCode, id, type}, flags_{flags}
+Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept : Def{opCode, id, type},
+                                                                                                flags_{flags}
 {
     operandCount_ = operandCount;
     if (operandCount_ > internalOperandCount)
@@ -80,7 +81,7 @@ Inst::identify(Def* def)
 void
 Inst::eraseOperand(unsigned index) noexcept
 {
-    auto op = operands();
+    auto op = operandCount_ <= internalOperandCount ? internalOperands_ : externalOperands_;
     for (unsigned idx = index; idx + 1 < operandCount_; ++idx)
         op[idx] = op[idx + 1];
     --operandCount_;
@@ -208,11 +209,13 @@ print(std::ostream& os, Program& program)
             if (insn->type() != &voidType)
                 os << "%" << insn->id() << " = ";
             os << toString(insn->opCode());
-            for (auto e : insn->operands()) {
-                if (e->opCode() == OpCode::constant && e->type()->kind() == TypeKind::integer)
-                    os << " " << static_cast<ScalarConstant const*>(e)->integerValue();
+            std::size_t operandCount = insn->operandCount();
+            for (std::size_t i = 0; i < operandCount; ++i) {
+                auto op = insn->getOperand(i);
+                if (op->opCode() == OpCode::constant && op->type()->kind() == TypeKind::integer)
+                    os << " " << static_cast<ScalarConstant const*>(op)->integerValue();
                 else
-                    os << " %" << e->id();
+                    os << " %" << op->id();
             }
             os << "\n";
         }

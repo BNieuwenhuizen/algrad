@@ -26,6 +26,7 @@ namespace hir {
     _(store, InstFlags::hasSideEffects)                                                                                \
     _(compositeConstruct, InstFlags::none)                                                                             \
     _(compositeExtract, InstFlags::none)                                                                               \
+    _(vectorShuffle, InstFlags::none)                                                                                  \
     _(gcnInterpolate, InstFlags::none)                                                                                 \
     _(gcnExport, InstFlags::hasSideEffects)
 
@@ -105,7 +106,9 @@ class Inst final : public Def
 
     ~Inst() noexcept;
 
-    boost::iterator_range<Def**> operands() noexcept;
+    std::size_t operandCount() const noexcept;
+    Def* getOperand(std::size_t index) const noexcept;
+    void setOperand(std::size_t index, Def* def) noexcept;
 
     void eraseOperand(unsigned index) noexcept;
 
