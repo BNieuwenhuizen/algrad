@@ -39,23 +39,25 @@ struct SelectionContext
     lir::Program* lprog;
 };
 
-lir::Reg
+lir::Temp
 getReg(SelectionContext& ctx, hir::Def& def, lir::RegClass rc, unsigned size)
 {
     if (ctx.regMap[def.id()] == ~0U) {
         ctx.regMap[def.id()] = ctx.lprog->allocateId();
     }
 
-    return lir::Reg{ctx.regMap[def.id()], rc, size};
+    return lir::Temp{ctx.regMap[def.id()], rc, size};
 }
 
 void
 createStartInstruction(SelectionContext& ctx, lir::Program& lprog, hir::Program& program)
 {
-    lir::Inst newInst{lir::OpCode::start, static_cast<unsigned>(program.params().size())};
-    newInst.args()[0] = lir::Arg{getReg(ctx, *program.params()[0], lir::RegClass::sgpr, 4), lir::Arg::Role::def, lir::PhysReg{16}};
-    newInst.args()[1] = lir::Arg{getReg(ctx, *program.params()[1], lir::RegClass::vgpr, 4), lir::Arg::Role::def, lir::PhysReg{0 + 256}};
-    newInst.args()[2] = lir::Arg{getReg(ctx, *program.params()[2], lir::RegClass::vgpr, 4), lir::Arg::Role::def, lir::PhysReg{1 + 256}};
+    auto newInst = std::make_unique<lir::StartInst>(3);
+    newInst->getDefinition(0) = lir::Def{getReg(ctx, *program.params()[0], lir::RegClass::sgpr, 4), lir::PhysReg{16}};
+    newInst->getDefinition(1) =
+      lir::Def{getReg(ctx, *program.params()[1], lir::RegClass::vgpr, 4), lir::PhysReg{0 + 256}};
+    newInst->getDefinition(2) =
+      lir::Def{getReg(ctx, *program.params()[2], lir::RegClass::vgpr, 4), lir::PhysReg{1 + 256}};
 
     lprog.blocks().front()->instructions().push_back(std::move(newInst));
 }
@@ -82,52 +84,41 @@ selectInstructions(hir::Program& program)
             hir::Inst& insn = *bb.instructions()[j];
             switch (insn.opCode()) {
                 case hir::OpCode::ret:
-                    lbb.instructions().emplace_back(lir::OpCode::s_endpgm, 0);
+                    lbb.instructions().push_back(std::make_unique<lir::EndProgramInstruction>());
                     break;
                 case hir::OpCode::gcnInterpolate: {
-                    lir::Inst newInsn1{lir::OpCode::v_interp_p1_f32, 5};
-                    lir::Inst newInsn2{lir::OpCode::v_interp_p2_f32, 6};
+                    auto attribute = static_cast<hir::ScalarConstant*>(insn.getOperand(3))->integerValue();
+                    auto component = static_cast<hir::ScalarConstant*>(insn.getOperand(4))->integerValue();
+                    auto p1 = std::make_unique<lir::VInterpP1F32Inst>(attribute, component);
+                    auto p2 = std::make_unique<lir::VInterpP2F32Inst>(attribute, component);
 
-                    lir::Reg tmp{lprog->allocateId(), lir::RegClass::vgpr, 4};
+                    lir::Temp tmp{lprog->allocateId(), lir::RegClass::vgpr, 4};
+                    p1->getDefinition(0) = lir::Def{tmp};
+                    p1->getOperand(0) = lir::Operand{getReg(ctx, *insn.getOperand(1), lir::RegClass::vgpr, 4)};
+                    p1->getOperand(1) =
+                      lir::Operand{getReg(ctx, *insn.getOperand(0), lir::RegClass::sgpr, 4), lir::PhysReg{124}};
 
-                    newInsn1.args()[0] = lir::Arg{tmp, lir::Arg::Role::def};
-                    newInsn1.args()[1] = lir::Arg{getReg(ctx, *insn.getOperand(1), lir::RegClass::vgpr, 4), lir::Arg::Role::use};
-                    newInsn1.args()[2] =
-                      lir::Arg::int32Constant(static_cast<hir::ScalarConstant*>(insn.getOperand(3))->integerValue());
-                    newInsn1.args()[3] =
-                      lir::Arg::int32Constant(static_cast<hir::ScalarConstant*>(insn.getOperand(4))->integerValue());
-                    newInsn1.args()[4] =
-                      lir::Arg{getReg(ctx, *insn.getOperand(0), lir::RegClass::sgpr, 4), lir::Arg::Role::use, lir::PhysReg{124}};
+                    p2->getDefinition(0) = lir::Def{getReg(ctx, insn, lir::RegClass::vgpr, 4)};
+                    p2->getOperand(0) = lir::Operand{tmp};
+                    p2->getOperand(1) = lir::Operand{getReg(ctx, *insn.getOperand(2), lir::RegClass::vgpr, 4)};
+                    p2->getOperand(2) =
+                      lir::Operand{getReg(ctx, *insn.getOperand(0), lir::RegClass::sgpr, 4), lir::PhysReg{124}};
 
-                    newInsn2.args()[0] = lir::Arg{getReg(ctx, insn, lir::RegClass::vgpr, 4), lir::Arg::Role::def};
-                    newInsn2.args()[1] = lir::Arg{tmp, lir::Arg::Role::use};
-                    newInsn2.args()[2] = lir::Arg{getReg(ctx, *insn.getOperand(2), lir::RegClass::vgpr, 4), lir::Arg::Role::use};
-                    newInsn2.args()[3] =
-                      lir::Arg::int32Constant(static_cast<hir::ScalarConstant*>(insn.getOperand(3))->integerValue());
-                    newInsn2.args()[4] =
-                      lir::Arg::int32Constant(static_cast<hir::ScalarConstant*>(insn.getOperand(4))->integerValue());
-                    newInsn2.args()[5] =
-                      lir::Arg{getReg(ctx, *insn.getOperand(0), lir::RegClass::sgpr, 4), lir::Arg::Role::use, lir::PhysReg{124}};
-
-                    lbb.instructions().emplace_back(std::move(newInsn2));
-                    lbb.instructions().emplace_back(std::move(newInsn1));
+                    lbb.instructions().emplace_back(std::move(p1));
+                    lbb.instructions().emplace_back(std::move(p2));
                 } break;
                 case hir::OpCode::gcnExport: {
-                    lir::Inst newInsn{lir::OpCode::exp, 9};
-                    newInsn.args()[0] =
-                      lir::Arg::int32Constant(static_cast<hir::ScalarConstant*>(insn.getOperand(0))->integerValue());
-                    newInsn.args()[1] =
-                      lir::Arg::int32Constant(static_cast<hir::ScalarConstant*>(insn.getOperand(1))->integerValue());
-                    newInsn.args()[2] =
-                      lir::Arg::int32Constant(static_cast<hir::ScalarConstant*>(insn.getOperand(2))->integerValue());
-                    newInsn.args()[3] = lir::Arg::int32Constant(1);
-                    newInsn.args()[4] = lir::Arg::int32Constant(1);
-                    newInsn.args()[5] = lir::Arg{getReg(ctx, *insn.getOperand(3), lir::RegClass::vgpr, 4), lir::Arg::Role::use};
-                    newInsn.args()[6] = lir::Arg{getReg(ctx, *insn.getOperand(4), lir::RegClass::vgpr, 4), lir::Arg::Role::use};
-                    newInsn.args()[7] = lir::Arg{getReg(ctx, *insn.getOperand(5), lir::RegClass::vgpr, 4), lir::Arg::Role::use};
-                    newInsn.args()[8] = lir::Arg{getReg(ctx, *insn.getOperand(6), lir::RegClass::vgpr, 4), lir::Arg::Role::use};
+                    auto enabledMask = static_cast<hir::ScalarConstant*>(insn.getOperand(0))->integerValue();
+                    auto dest = static_cast<hir::ScalarConstant*>(insn.getOperand(1))->integerValue();
+                    auto compressed = static_cast<hir::ScalarConstant*>(insn.getOperand(2))->integerValue();
+                    auto exp = std::make_unique<lir::ExportInst>(enabledMask, dest, compressed, true, true);
 
-                    lbb.instructions().emplace_back(std::move(newInsn));
+                    exp->getOperand(0) = lir::Operand{getReg(ctx, *insn.getOperand(3), lir::RegClass::vgpr, 4)};
+                    exp->getOperand(1) = lir::Operand{getReg(ctx, *insn.getOperand(4), lir::RegClass::vgpr, 4)};
+                    exp->getOperand(2) = lir::Operand{getReg(ctx, *insn.getOperand(5), lir::RegClass::vgpr, 4)};
+                    exp->getOperand(3) = lir::Operand{getReg(ctx, *insn.getOperand(6), lir::RegClass::vgpr, 4)};
+
+                    lbb.instructions().emplace_back(std::move(exp));
                 } break;
                 default:
                     std::terminate();
