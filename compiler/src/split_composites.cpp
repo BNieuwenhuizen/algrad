@@ -46,7 +46,7 @@ splitLoad(Program& program, std::vector<std::unique_ptr<Inst>>& replacements, Ba
         newInsn->setOperand(i, &load);
     }
 
-    insn->identify(newInsn.get());
+    replace(*insn, *newInsn);
     bb.insertBack(std::move(newInsn));
     replacements.push_back(std::move(insn));
 }
@@ -100,7 +100,8 @@ splitVectorShuffle(Program& program, std::vector<std::unique_ptr<Inst>>& replace
         newInsn->setOperand(i, &extractComponent(program, bb, *op, index));
     }
 
-    insn->identify(newInsn.get());
+
+    replace(*insn, *newInsn);
     bb.insertBack(std::move(newInsn));
     replacements.push_back(std::move(insn));
 }
@@ -115,13 +116,6 @@ splitComposites(Program& program)
         std::swap(oldInstructions, bb->instructions());
 
         for (auto& insn : oldInstructions) {
-            auto operandCount = insn->operandCount();
-            for (std::size_t i = 0; i < operandCount; ++i) {
-                auto op = insn->getOperand(i);
-                if (op->opCode() == OpCode::identity) {
-                    insn->setOperand(i, static_cast<Inst*>(op)->getOperand(0));
-                }
-            }
             switch (insn->opCode()) {
                 case OpCode::load:
                     splitLoad(program, replacements, *bb, std::move(insn));

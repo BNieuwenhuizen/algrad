@@ -13,28 +13,8 @@ template <typename F>
 void
 visitInstructions(BasicBlock& bb, F&& callback)
 {
-    auto& insns = bb.instructions();
-    unsigned j = 0;
-    std::vector<std::unique_ptr<Inst>> toDestroy;
-
-    for (unsigned i = 0; i < insns.size(); ++i) {
-        auto& insn = insns[i];
-        auto operandCount = insn->operandCount();
-        for (std::size_t j = 0; j < operandCount; ++j) {
-            auto op = insn->getOperand(j);
-            if (op->opCode() == OpCode::identity)
-                insn->setOperand(j, static_cast<Inst*>(op)->getOperand(0));
-        }
-        callback(*insn);
-        if (insn->opCode() != OpCode::identity) {
-            if (j != i)
-                insns[j] = std::move(insns[i]);
-            ++j;
-        } else
-            toDestroy.push_back(std::move(insns[i]));
-    }
-    if (j != insns.size())
-        insns.resize(j);
+    for (auto& inst : bb.instructions())
+        callback(*inst);
 }
 
 bool
@@ -79,14 +59,16 @@ splitVariables(Program& program)
                 newVars.push_back(newVar.get());
                 program.variables().push_back(std::move(newVar));
             }
-
         } else {
             program.variables().push_back(std::move(v));
         }
     }
 
     for (auto& bb : program.basicBlocks()) {
-        visitInstructions(*bb, [&cannotBeSplit, &newVars, &newVarOffsets](Inst& insn) {
+        std::size_t index = 0;
+        for (std::size_t i = 0; i < bb->instructions().size(); ++i) {
+            auto& insn = *bb->instructions()[i];
+            bool toDelete = false;
             if (insn.opCode() == OpCode::accessChain) {
                 auto baseId = insn.getOperand(0)->id();
                 if (newVarOffsets[baseId] >= 0) {
@@ -94,14 +76,19 @@ splitVariables(Program& program)
                     auto replacement = newVars[newVarOffsets[baseId] + idx];
 
                     if (insn.operandCount() == 2) {
-                        insn.identify(replacement);
+                        replace(insn, *replacement);
+                        toDelete = true;
                     } else {
                         insn.setOperand(0, newVars[newVarOffsets[baseId] + idx]);
                         insn.eraseOperand(1);
                     }
                 }
             }
-        });
+            if (!toDelete)
+                bb->instructions()[index++] = std::move(bb->instructions()[i]);
+        }
+        if (index != bb->instructions().size())
+            bb->instructions().resize(index);
     }
 
     return changed;
@@ -140,25 +127,35 @@ promoteVariables(Program& program)
         if (bb->predecessors().size() > 1) {
             for (std::size_t i = 0; i < promotedValues.size(); ++i) {
                 phis.push_back(program.createDef<Inst>(
-                  OpCode::phi, static_cast<PointerTypeInfo const*>(program.variables()[i]->type())->pointeeType(), bb->predecessors().size()));
+                  OpCode::phi, static_cast<PointerTypeInfo const*>(program.variables()[i]->type())->pointeeType(),
+                  bb->predecessors().size()));
 
                 promotedValues[i] = phis.back().get();
             }
         }
-        visitInstructions(*bb, [&canPromote, &promotedValues](Inst& insn) {
+        std::size_t index = 0;
+        for (std::size_t i = 0; i < bb->instructions().size(); ++i) {
+            auto& insn = *bb->instructions()[i];
+            bool toBeDeleted = false;
             if (insn.opCode() == OpCode::store) {
                 auto baseId = insn.getOperand(0)->id();
                 if (canPromote[baseId] >= 0) {
                     promotedValues[canPromote[baseId]] = insn.getOperand(1);
-                    insn.identify(nullptr);
+                    toBeDeleted = true;
                 }
             } else if (insn.opCode() == OpCode::load) {
                 auto baseId = insn.getOperand(0)->id();
                 if (canPromote[baseId] >= 0) {
-                    insn.identify(promotedValues[canPromote[baseId]]);
+                    replace(insn, *promotedValues[canPromote[baseId]]);
+                    toBeDeleted = true;
                 }
             }
-        });
+            if (!toBeDeleted)
+                bb->instructions()[index++] = std::move(bb->instructions()[i]);
+        }
+
+        if (index != bb->instructions().size())
+            bb->instructions().resize(index);
 
         if (!phis.empty())
             bb->instructions().insert(bb->instructions().begin(), make_move_iterator(phis.begin()),
@@ -175,9 +172,9 @@ promoteVariables(Program& program)
             while (succ->predecessors()[idx] != bb.get())
                 ++idx;
 
-	    for(std::size_t i = 0; i < defs.size(); ++i) {
-		    succ->instructions()[i]->setOperand(idx, defs[i]);
-	    }
+            for (std::size_t i = 0; i < defs.size(); ++i) {
+                succ->instructions()[i]->setOperand(idx, defs[i]);
+            }
         }
     }
 

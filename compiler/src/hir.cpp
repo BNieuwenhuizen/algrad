@@ -15,51 +15,41 @@ InstFlags const defaultInstFlags[] = {
 
 Def::~Def() noexcept
 {
+    uses_.clear_and_dispose([](Use* u) { u->producer_ = nullptr; });
+}
+
+void
+replace(Def& old, Def& replacement) noexcept
+{
+    auto uses = old.uses();
+    for (auto it = uses.begin(); it != uses.end();) {
+        auto& use = *it++;
+        use.setProducer(&replacement);
+    }
 }
 
 Inst::Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept
   : Def{opCode, id, type},
-    flags_{defaultInstFlags[static_cast<std::uint16_t>(opCode)]}
+    flags_{defaultInstFlags[static_cast<std::uint16_t>(opCode)]},
+    operands_(operandCount, Use(this))
 {
-    operandCount_ = operandCount;
-    if (operandCount_ > internalOperandCount)
-        externalOperands_ = new Def*[operandCount_];
 }
 
-Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept : Def{opCode, id, type},
-                                                                                                flags_{flags}
+Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept
+  : Def{opCode, id, type},
+    flags_{flags},
+    operands_(operandCount, Use(this))
 {
-    operandCount_ = operandCount;
-    if (operandCount_ > internalOperandCount)
-        externalOperands_ = new Def*[operandCount_];
 }
 
 Inst::~Inst() noexcept
 {
-    if (operandCount_ > internalOperandCount)
-        delete[] externalOperands_;
-}
-
-void
-Inst::identify(Def* def)
-{
-    if (operandCount_ > internalOperandCount)
-        delete[] externalOperands_;
-    operandCount_ = 1;
-    internalOperands_[0] = def;
-    opCode_ = OpCode::identity;
 }
 
 void
 Inst::eraseOperand(unsigned index) noexcept
 {
-    auto op = operandCount_ <= internalOperandCount ? internalOperands_ : externalOperands_;
-    for (unsigned idx = index; idx + 1 < operandCount_; ++idx)
-        op[idx] = op[idx + 1];
-    --operandCount_;
-    if (operandCount_ == 3) {
-        std::copy(externalOperands_, externalOperands_ + 3, internalOperands_);
-    }
+    operands_.erase(operands_.begin() + index);
 }
 
 BasicBlock::BasicBlock(int id)
@@ -75,13 +65,14 @@ BasicBlock::insertBack(std::unique_ptr<Inst> insn)
     return ret;
 }
 
-
-std::size_t BasicBlock::insertPredecessor(BasicBlock* pred) {
-	for(std::size_t i = 0; i < predecessors_.size(); ++i)
-		if(predecessors_[i] == pred)
-			return i;
-	predecessors_.push_back(pred);
-	return predecessors_.size() - 1;
+std::size_t
+BasicBlock::insertPredecessor(BasicBlock* pred)
+{
+    for (std::size_t i = 0; i < predecessors_.size(); ++i)
+        if (predecessors_[i] == pred)
+            return i;
+    predecessors_.push_back(pred);
+    return predecessors_.size() - 1;
 }
 Program::Program(ProgramType type)
   : type_{type}
@@ -200,10 +191,10 @@ print(std::ostream& os, Program& program)
             os << "\n";
         }
         os << "    successors";
-	for(auto succ : bb->successors()) {
-		os << " " << succ->id();
-	}
-	os << "\n";
+        for (auto succ : bb->successors()) {
+            os << " " << succ->id();
+        }
+        os << "\n";
     }
 }
 }

@@ -24,7 +24,7 @@ lowerInput(Program& program)
         p2->setOperand(4, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx % 4)));
         ++idx;
 
-	p->identify(p2.get());
+	replace(*p, *p2);
 	params2.push_back(std::move(p2));
     }
 

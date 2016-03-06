@@ -2,12 +2,14 @@
 #define ALGRAD_COMPILER_IR_HPP
 
 #include <cstdint>
+#include <iosfwd>
 #include <memory>
 
 #include "types.hpp"
 
+#include <boost/intrusive/list.hpp>
+#include <boost/intrusive/list_hook.hpp>
 #include <boost/range/iterator_range.hpp>
-#include <iosfwd>
 
 namespace algrad {
 namespace compiler {
@@ -15,10 +17,8 @@ namespace compiler {
 namespace hir {
 
 #define ALGRAD_COMPILER_HIR_OPCODES(_)                                                                                 \
-    _(function, InstFlags::none)                                                                                       \
     _(constant, InstFlags::none)                                                                                       \
     _(parameter, InstFlags::none)                                                                                      \
-    _(identity, InstFlags::none)                                                                                       \
     _(variable, InstFlags::none)                                                                                       \
     _(phi, InstFlags::none)                                                                                            \
     _(ret, InstFlags::isControlInstruction)                                                                            \
@@ -55,6 +55,31 @@ enum class OpCode : std::uint16_t
 
 extern InstFlags const defaultInstFlags[];
 
+class Def;
+class Inst;
+
+class Use final : public boost::intrusive::list_base_hook<>
+{
+  public:
+    explicit Use(Inst*) noexcept;
+    Use(Use const&) noexcept;
+    Use& operator=(Use const&) noexcept;
+    ~Use() noexcept;
+
+    Inst* consumer() noexcept;
+    Def* producer() noexcept;
+    void setProducer(Def* def) noexcept;
+
+  private:
+    Inst* consumer_;
+    Def* producer_;
+
+    friend class Def;
+};
+
+using UseList = boost::intrusive::list<Use>;
+using UseIterator = UseList::iterator;
+
 class Def
 {
   public:
@@ -71,16 +96,22 @@ class Def
 
     int id() const noexcept;
 
+    boost::iterator_range<UseIterator> uses() noexcept;
+
   protected:
     ~Def() noexcept;
 
     OpCode opCode_;
 
   protected:
-    std::uint16_t operandCount_;
     int id_;
     Type type_;
+
+    UseList uses_;
+    friend class Use;
 };
+
+void replace(Def& old, Def& replacement) noexcept;
 
 class ScalarConstant final : public Def
 {
@@ -109,7 +140,7 @@ class Inst final : public Def
     ~Inst() noexcept;
 
     std::size_t operandCount() const noexcept;
-    Def* getOperand(std::size_t index) const noexcept;
+    Def* getOperand(std::size_t index) noexcept;
     void setOperand(std::size_t index, Def* def) noexcept;
 
     void eraseOperand(unsigned index) noexcept;
@@ -120,16 +151,7 @@ class Inst final : public Def
 
   private:
     InstFlags flags_;
-
-    enum
-    {
-        internalOperandCount = 3
-    };
-    union
-    {
-        Def* internalOperands_[internalOperandCount];
-        Def** externalOperands_;
-    };
+    std::vector<Use> operands_;
 };
 
 class BasicBlock

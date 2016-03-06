@@ -13,7 +13,7 @@ visit(std::vector<bool>& used, Def& def)
     if (used[def.id()])
         return;
     used[def.id()] = true;
-    if (def.opCode() != OpCode::constant && def.opCode() != OpCode::function) {
+    if (def.opCode() != OpCode::constant) {
         auto operandCount = static_cast<Inst&>(def).operandCount();
         for (std::size_t i = 0; i < operandCount; ++i) {
             visit(used, *static_cast<Inst&>(def).getOperand(i));

@@ -28,6 +28,56 @@ constexpr bool operator!(InstFlags flags) noexcept
     return flags == InstFlags::none;
 }
 
+inline Use::Use(Inst* c) noexcept : consumer_{c}, producer_{nullptr}
+{
+}
+
+inline Use::Use(Use const& other) noexcept : consumer_{other.consumer_}, producer_{other.producer_}
+{
+    if (producer_)
+        producer_->uses_.push_back(*this);
+}
+
+inline Use&
+Use::operator=(Use const& other) noexcept
+{
+    if (producer_)
+        producer_->uses_.erase(UseList::s_iterator_to(*this));
+    producer_ = other.producer_;
+    consumer_ = other.consumer_;
+    if (producer_)
+        producer_->uses_.push_back(*this);
+    return *this;
+}
+
+inline Use::~Use() noexcept
+{
+    if (producer_)
+        producer_->uses_.erase(UseList::s_iterator_to(*this));
+}
+
+inline Inst*
+Use::consumer() noexcept
+{
+    return consumer_;
+}
+
+inline Def*
+Use::producer() noexcept
+{
+    return producer_;
+}
+
+inline void
+Use::setProducer(Def* def) noexcept
+{
+    if (producer_)
+        producer_->uses_.erase(UseList::s_iterator_to(*this));
+    producer_ = def;
+    if (producer_)
+        producer_->uses_.push_back(*this);
+}
+
 inline Def::Def(OpCode opCode, int id, Type type) noexcept : opCode_{opCode}, id_{id}, type_{type}
 {
 }
@@ -48,6 +98,12 @@ inline int
 Def::id() const noexcept
 {
     return id_;
+}
+
+inline boost::iterator_range<UseIterator>
+Def::uses() noexcept
+{
+    return {uses_.begin(), uses_.end()};
 }
 
 inline ScalarConstant::ScalarConstant(OpCode opCode, int id, Type type, std::uint64_t v) noexcept
@@ -76,25 +132,19 @@ ScalarConstant::integerValue() const noexcept
 inline std::size_t
 Inst::operandCount() const noexcept
 {
-    return operandCount_;
+    return operands_.size();
 }
 
 inline Def*
-Inst::getOperand(std::size_t index) const noexcept
+Inst::getOperand(std::size_t index) noexcept
 {
-    if (operandCount_ <= internalOperandCount)
-        return internalOperands_[index];
-    else
-        return externalOperands_[index];
+    return operands_[index].producer();
 }
 
 inline void
 Inst::setOperand(std::size_t index, Def* def) noexcept
 {
-    if (operandCount_ <= internalOperandCount)
-        internalOperands_[index] = def;
-    else
-        externalOperands_[index] = def;
+    operands_[index].setProducer(def);
 }
 
 inline InstFlags
