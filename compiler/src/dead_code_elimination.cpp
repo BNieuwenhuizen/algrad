@@ -20,6 +20,13 @@ visit(std::vector<bool>& used, Def& def)
         }
     }
 }
+
+void
+eliminate(std::vector<bool> const& used, std::vector<std::unique_ptr<Inst>>& insts)
+{
+    insts.erase(std::remove_if(insts.begin(), insts.end(), [&used](auto& insn) { return !used[insn->id()]; }),
+                insts.end());
+}
 }
 
 void
@@ -33,10 +40,10 @@ eliminateDeadCode(Program& program)
         }
     }
     for (auto& bb : program.basicBlocks()) {
-        auto& insns = bb->instructions();
-        insns.erase(std::remove_if(insns.begin(), insns.end(), [&used](auto& insn) { return !used[insn->id()]; }),
-                    insns.end());
+        eliminate(used, bb->instructions());
     }
+    eliminate(used, program.variables());
+    eliminate(used, program.params());
 }
 }
 }
