@@ -34,34 +34,6 @@ Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCo
         externalOperands_ = new Def*[operandCount_];
 }
 
-Inst::Inst(Inst const& other)
-  : Def{other}
-{
-    if (operandCount_ > internalOperandCount)
-        externalOperands_ = new Def*[operandCount_];
-
-    auto src = operandCount_ > internalOperandCount ? other.externalOperands_ : other.internalOperands_;
-    auto dest = operandCount_ > internalOperandCount ? externalOperands_ : internalOperands_;
-    std::copy(src, src + operandCount_, dest);
-}
-
-Inst&
-Inst::operator=(Inst&& other)
-{
-    if (this != &other) {
-        if (operandCount_ > internalOperandCount)
-            delete[] externalOperands_;
-        Def::operator=(other);
-        if (operandCount_ > internalOperandCount) {
-            externalOperands_ = other.externalOperands_;
-            other.operandCount_ = 0;
-        } else {
-            std::copy(other.internalOperands_, other.internalOperands_ + internalOperandCount, internalOperands_);
-        }
-    }
-    return *this;
-}
-
 Inst::~Inst() noexcept
 {
     if (operandCount_ > internalOperandCount)

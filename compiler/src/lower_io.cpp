@@ -9,7 +9,7 @@ using namespace hir;
 void
 lowerInput(Program& program)
 {
-    std::vector<std::unique_ptr<Inst>> params;
+    std::vector<std::unique_ptr<Inst>> params, params2;;
     params.push_back(program.createDef<Inst>(OpCode::parameter, &int32Type, 0));
     params.push_back(program.createDef<Inst>(OpCode::parameter, &float32Type, 0));
     params.push_back(program.createDef<Inst>(OpCode::parameter, &float32Type, 0));
@@ -17,16 +17,20 @@ lowerInput(Program& program)
 
     int idx = 0;
     for (auto& p : params) {
-        *p = Inst{OpCode::gcnInterpolate, p->id(), &float32Type, 5};
+	auto p2 = program.createDef<Inst>(OpCode::gcnInterpolate, &float32Type, 5);
         for (int i = 0; i < 3; ++i)
-            p->setOperand(i, program.params()[i].get());
-        p->setOperand(3, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx / 4)));
-        p->setOperand(4, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx % 4)));
+            p2->setOperand(i, program.params()[i].get());
+        p2->setOperand(3, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx / 4)));
+        p2->setOperand(4, program.getScalarConstant(&int32Type, static_cast<std::uint64_t>(idx % 4)));
         ++idx;
+
+	p->identify(p2.get());
+	params2.push_back(std::move(p2));
     }
 
     auto& insns = program.initialBlock().instructions();
     insns.insert(insns.begin(), make_move_iterator(params.begin()), make_move_iterator(params.end()));
+    insns.insert(insns.begin(), make_move_iterator(params2.begin()), make_move_iterator(params2.end()));
 }
 
 void

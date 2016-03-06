@@ -60,6 +60,11 @@ class Def
   public:
     Def(OpCode opCode, int id, Type type) noexcept;
 
+    Def(Def const&) = delete;
+    Def(Def&&) = delete;
+    Def& operator=(Def const&) = delete;
+    Def& operator=(Def&&) = delete;
+
     OpCode opCode() const noexcept;
 
     Type type() const noexcept;
@@ -67,8 +72,6 @@ class Def
     int id() const noexcept;
 
   protected:
-    Def(Def const&) noexcept = default;
-
     ~Def() noexcept;
 
     OpCode opCode_;
@@ -103,11 +106,6 @@ class Inst final : public Def
   public:
     Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept;
     Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept;
-
-    Inst(Inst const&);
-
-    Inst& operator=(Inst&&);
-
     ~Inst() noexcept;
 
     std::size_t operandCount() const noexcept;
