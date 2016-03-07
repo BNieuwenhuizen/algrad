@@ -20,6 +20,9 @@ computeRegisterClasses(hir::Program& program)
             if (insn.type() == &voidType)
                 continue;
 
+            if (insn.isVarying())
+                regClasses[insn.id()] = lir::RegClass::vgpr;
+
             switch (insn.opCode()) {
                 default: {
                     auto operandCount = insn.operandCount();

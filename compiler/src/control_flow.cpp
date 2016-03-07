@@ -2,6 +2,7 @@
 #include "hir_inlines.hpp"
 
 #include <algorithm>
+#include <queue>
 
 namespace algrad {
 namespace compiler {
@@ -30,6 +31,35 @@ orderBlocksRPO(hir::Program& program)
 
     std::sort(program.basicBlocks().begin(), program.basicBlocks().end(),
               [](auto& a, auto& b) { return a->id() < b->id(); });
+}
+namespace {
+void
+markVarying(hir::Inst& inst)
+{
+    if (inst.isVarying() || !!(inst.flags() & hir::InstFlags::alwaysUniform))
+        return;
+
+    inst.markVarying();
+
+    for (auto& u : inst.uses()) {
+        markVarying(*u.consumer());
+    }
+}
+}
+
+void
+determineDivergence(hir::Program& program)
+{
+    for (auto& p : program.params()) {
+        if (!!(p->flags() & hir::InstFlags::alwaysVarying))
+            markVarying(*p);
+    }
+    for (auto& bb : program.basicBlocks()) {
+        for (auto& inst : bb->instructions()) {
+            if (!!(inst.flags() & hir::InstFlags::alwaysVarying) || inst.opCode() == hir::OpCode::phi)
+                markVarying(inst);
+        }
+    }
 }
 }
 }

@@ -175,8 +175,11 @@ print(std::ostream& os, Program& program)
         os << "  block " << bb->id() << ":\n";
         for (auto& insn : bb->instructions()) {
             os << "     ";
-            if (insn.type() != &voidType)
+            if (insn.type() != &voidType) {
+		    if(insn.isVarying())
+			    os << "varying ";
                 os << "%" << insn.id() << " = ";
+	    }
             os << toString(insn.opCode());
             std::size_t operandCount = insn.operandCount();
             for (std::size_t i = 0; i < operandCount; ++i) {

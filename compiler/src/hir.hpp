@@ -38,7 +38,10 @@ enum class InstFlags : std::uint16_t
 {
     none = 0,
     hasSideEffects = 1U << 0,
-    isControlInstruction = 1U << 1
+    isControlInstruction = 1U << 1,
+    isVarying = 1U << 2,
+    alwaysVarying = 1U << 3,
+    alwaysUniform = 1U << 4
 };
 
 constexpr InstFlags operator|(InstFlags, InstFlags) noexcept;
@@ -153,6 +156,9 @@ class Inst final : public Def, public boost::intrusive::list_base_hook<>
     BasicBlock* parent() noexcept;
     void setParent(BasicBlock* bb) noexcept;
 
+    bool isVarying() const noexcept;
+    void markVarying() noexcept;
+
   private:
     InstFlags flags_;
     std::vector<Use> operands_;
@@ -253,6 +259,7 @@ void splitComposites(hir::Program& program);
 void eliminateDeadCode(hir::Program& program);
 void lowerIO(hir::Program& program);
 void orderBlocksRPO(hir::Program& program);
+void determineDivergence(hir::Program& program);
 }
 }
 

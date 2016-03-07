@@ -165,6 +165,18 @@ Inst::setParent(BasicBlock* bb) noexcept
     parent_ = bb;
 }
 
+inline bool
+Inst::isVarying() const noexcept
+{
+    return !!(flags_ & InstFlags::isVarying);
+}
+
+inline void
+Inst::markVarying() noexcept
+{
+    flags_ = (flags_ | InstFlags::isVarying);
+}
+
 inline int
 BasicBlock::id() const noexcept
 {

@@ -12,8 +12,8 @@ lowerInput(Program& program)
     std::vector<std::unique_ptr<Inst>> params, params2;
     ;
     params.push_back(program.createDef<Inst>(OpCode::parameter, &int32Type, 0));
-    params.push_back(program.createDef<Inst>(OpCode::parameter, &float32Type, 0));
-    params.push_back(program.createDef<Inst>(OpCode::parameter, &float32Type, 0));
+    params.push_back(program.createDef<Inst>(OpCode::parameter, &float32Type, hir::InstFlags::alwaysVarying, 0));
+    params.push_back(program.createDef<Inst>(OpCode::parameter, &float32Type, hir::InstFlags::alwaysVarying, 0));
     std::swap(params, program.params());
 
     int idx = 0;

@@ -22,6 +22,7 @@ main(int argc, char* argv[])
     algrad::compiler::promoteVariables(*prog);
     algrad::compiler::eliminateDeadCode(*prog);
     algrad::compiler::lowerIO(*prog);
+    algrad::compiler::determineDivergence(*prog);
     print(std::cout, *prog);
 
     auto lprog = algrad::compiler::selectInstructions(*prog);
