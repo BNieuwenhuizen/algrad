@@ -507,7 +507,6 @@ createIOVars(SPIRVBuilder& builder)
         auto ptr = builder.objects[id].definition;
         auto type = getType(builder, ptr[1]);
         assert(type->kind() == TypeKind::pointer);
-        std::cout << "var " << id << " " << getType(builder, ptr[1]) << "\n";
         auto v = builder.program->createDef<Inst>(OpCode::variable, type, 0);
 
         builder.objects[id].tag = SPIRVObject::Tag::def;
@@ -517,7 +516,7 @@ createIOVars(SPIRVBuilder& builder)
             builder.inputs.push_back({id, v.get()});
         else
             builder.outputs.push_back({id, v.get()});
-        builder.program->variables().push_back(std::move(v));
+        builder.program->insertVariable(std::move(v));
     }
 }
 

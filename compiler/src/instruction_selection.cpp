@@ -3,6 +3,8 @@
 #include "lir.hpp"
 #include <iostream>
 
+#include <boost/range/adaptor/reversed.hpp>
+
 namespace algrad {
 namespace compiler {
 
@@ -15,15 +17,15 @@ computeRegisterClasses(hir::Program& program)
     regClasses[program.params()[2]->id()] = lir::RegClass::vgpr;
     for (auto& bb : program.basicBlocks()) {
         for (auto& insn : bb->instructions()) {
-            if (insn->type() == &voidType)
+            if (insn.type() == &voidType)
                 continue;
 
-            switch (insn->opCode()) {
+            switch (insn.opCode()) {
                 default: {
-                    auto operandCount = insn->operandCount();
+                    auto operandCount = insn.operandCount();
                     for (std::size_t i = 0; i < operandCount; ++i) {
-                        if (regClasses[insn->getOperand(i)->id()] == lir::RegClass::vgpr)
-                            regClasses[insn->id()] = lir::RegClass::vgpr;
+                        if (regClasses[insn.getOperand(i)->id()] == lir::RegClass::vgpr)
+                            regClasses[insn.id()] = lir::RegClass::vgpr;
                     }
                 }
             }
@@ -90,8 +92,7 @@ selectInstructions(hir::Program& program)
         auto& bb = *program.basicBlocks()[i];
         auto& lbb = *ctx.lprog->blocks()[i];
 
-        for (int j = bb.instructions().size() - 1; j >= 0; --j) {
-            hir::Inst& insn = *bb.instructions()[j];
+        for (auto& insn : boost::adaptors::reverse(bb.instructions())) {
             switch (insn.opCode()) {
                 case hir::OpCode::ret:
                     lbb.instructions().push_back(std::make_unique<lir::EndProgramInstruction>());

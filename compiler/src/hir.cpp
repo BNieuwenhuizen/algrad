@@ -57,12 +57,9 @@ BasicBlock::BasicBlock(int id)
 {
 }
 
-Inst&
-BasicBlock::insertBack(std::unique_ptr<Inst> insn)
+BasicBlock::~BasicBlock() noexcept
 {
-    auto& ret = *insn;
-    instructions_.push_back(std::move(insn));
-    return ret;
+    instructions_.clear_and_dispose([](Inst* inst) { delete inst; });
 }
 
 std::size_t
@@ -83,6 +80,7 @@ Program::Program(ProgramType type)
 
 Program::~Program() noexcept
 {
+	variables_.clear_and_dispose([](Inst* inst) { delete inst; });
 }
 
 std::unique_ptr<BasicBlock>
@@ -170,19 +168,19 @@ print(std::ostream& os, Program& program)
     os << ")\n";
     for (auto& insn : program.variables()) {
         os << "    ";
-        os << "%" << insn->id() << " = " << toString(insn->opCode());
+        os << "%" << insn.id() << " = " << toString(insn.opCode());
         os << "\n";
     }
     for (auto& bb : program.basicBlocks()) {
         os << "  block " << bb->id() << ":\n";
         for (auto& insn : bb->instructions()) {
             os << "     ";
-            if (insn->type() != &voidType)
-                os << "%" << insn->id() << " = ";
-            os << toString(insn->opCode());
-            std::size_t operandCount = insn->operandCount();
+            if (insn.type() != &voidType)
+                os << "%" << insn.id() << " = ";
+            os << toString(insn.opCode());
+            std::size_t operandCount = insn.operandCount();
             for (std::size_t i = 0; i < operandCount; ++i) {
-                auto op = insn->getOperand(i);
+                auto op = insn.getOperand(i);
                 if (op->opCode() == OpCode::constant && op->type()->kind() == TypeKind::integer)
                     os << " " << static_cast<ScalarConstant const*>(op)->integerValue();
                 else

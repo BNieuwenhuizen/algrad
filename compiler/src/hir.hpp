@@ -132,7 +132,7 @@ class ScalarConstant final : public Def
     };
 };
 
-class Inst final : public Def
+class Inst final : public Def, public boost::intrusive::list_base_hook<>
 {
   public:
     Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept;
@@ -154,16 +154,23 @@ class Inst final : public Def
     std::vector<Use> operands_;
 };
 
+using InstList = boost::intrusive::list<Inst>;
+using InstIterator = InstList::iterator;
+
 class BasicBlock
 {
   public:
     BasicBlock(int id);
+    ~BasicBlock() noexcept;
 
     int id() const noexcept;
 
-    Inst& insertBack(std::unique_ptr<Inst> insn);
+    Inst& insertFront(std::unique_ptr<Inst> insn) noexcept;
+    Inst& insertBack(std::unique_ptr<Inst> insn) noexcept;
+    Inst& insertBefore(Inst& pos, std::unique_ptr<Inst> inst) noexcept;
+    std::unique_ptr<Inst> erase(Inst& inst) noexcept;
 
-    std::vector<std::unique_ptr<Inst>>& instructions() noexcept;
+    boost::iterator_range<InstIterator> instructions() noexcept;
 
     std::vector<BasicBlock*>& successors() noexcept;
     std::vector<BasicBlock*> const& predecessors() noexcept;
@@ -171,7 +178,7 @@ class BasicBlock
     std::size_t insertPredecessor(BasicBlock*);
 
   private:
-    std::vector<std::unique_ptr<Inst>> instructions_;
+    InstList instructions_;
     int id_;
 
     std::vector<BasicBlock *> successors_, predecessors_;
@@ -188,7 +195,6 @@ class Program
 {
   public:
     Program(ProgramType);
-
     ~Program() noexcept;
 
     ProgramType type() const noexcept;
@@ -210,7 +216,9 @@ class Program
 
     std::vector<std::unique_ptr<BasicBlock>> const& basicBlocks() noexcept;
 
-    std::vector<std::unique_ptr<Inst>>& variables() noexcept;
+    boost::iterator_range<InstIterator> variables() noexcept;
+    Inst& insertVariable(std::unique_ptr<Inst> inst) noexcept;
+    std::unique_ptr<Inst> eraseVariable(Inst& inst) noexcept;
 
     Inst& appendParam(std::unique_ptr<Inst> param);
 
@@ -227,7 +235,7 @@ class Program
     std::vector<std::unique_ptr<ScalarConstant>> scalarConstants_;
 
     std::vector<std::unique_ptr<BasicBlock>> basicBlocks_;
-    std::vector<std::unique_ptr<Inst>> variables_;
+    InstList variables_;
     std::vector<std::unique_ptr<Inst>> params_;
 };
 

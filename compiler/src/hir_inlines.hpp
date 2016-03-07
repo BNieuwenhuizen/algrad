@@ -159,7 +159,35 @@ BasicBlock::id() const noexcept
     return id_;
 }
 
-inline std::vector<std::unique_ptr<Inst>>&
+inline Inst&
+BasicBlock::insertFront(std::unique_ptr<Inst> insn) noexcept
+{
+    instructions_.push_front(*insn);
+    return *insn.release();
+}
+
+inline Inst&
+BasicBlock::insertBack(std::unique_ptr<Inst> insn) noexcept
+{
+    instructions_.push_back(*insn);
+    return *insn.release();
+}
+
+inline Inst&
+BasicBlock::insertBefore(Inst& pos, std::unique_ptr<Inst> inst) noexcept
+{
+    instructions_.insert(InstList::s_iterator_to(pos), *inst);
+    return *inst.release();
+}
+
+inline std::unique_ptr<Inst>
+BasicBlock::erase(Inst& inst) noexcept
+{
+    instructions_.erase(InstList::s_iterator_to(inst));
+    return std::unique_ptr<Inst>{&inst};
+}
+
+inline boost::iterator_range<InstIterator>
 BasicBlock::instructions() noexcept
 {
     return instructions_;
@@ -208,10 +236,22 @@ Program::basicBlocks() noexcept
     return basicBlocks_;
 }
 
-inline std::vector<std::unique_ptr<Inst>>&
+inline boost::iterator_range<InstIterator>
 Program::variables() noexcept
 {
     return variables_;
+}
+
+inline Inst&
+Program::insertVariable(std::unique_ptr<Inst> inst) noexcept
+{
+    variables_.push_back(*inst);
+    return *inst.release();
+}
+
+inline std::unique_ptr<Inst> Program::eraseVariable(Inst& inst) noexcept {
+	variables_.erase(InstList::s_iterator_to(inst));
+	return std::unique_ptr<Inst>{&inst};
 }
 
 inline std::vector<std::unique_ptr<Inst>>&
