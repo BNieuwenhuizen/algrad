@@ -164,6 +164,7 @@ class BasicBlock
     ~BasicBlock() noexcept;
 
     int id() const noexcept;
+    void setId(int v) noexcept;
 
     Inst& insertFront(std::unique_ptr<Inst> insn) noexcept;
     Inst& insertBack(std::unique_ptr<Inst> insn) noexcept;
@@ -214,7 +215,7 @@ class Program
 
     BasicBlock& insertBack(std::unique_ptr<BasicBlock>);
 
-    std::vector<std::unique_ptr<BasicBlock>> const& basicBlocks() noexcept;
+    std::vector<std::unique_ptr<BasicBlock>>& basicBlocks() noexcept;
 
     boost::iterator_range<InstIterator> variables() noexcept;
     Inst& insertVariable(std::unique_ptr<Inst> inst) noexcept;
@@ -243,12 +244,11 @@ void print(std::ostream& os, Program& program);
 }
 
 void promoteVariables(hir::Program& program);
-
 void splitComposites(hir::Program& program);
-
 void eliminateDeadCode(hir::Program& program);
-
 void lowerIO(hir::Program& program);
+void orderBlocksRPO(hir::Program& program);
+
 }
 }
 

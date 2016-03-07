@@ -17,6 +17,7 @@ main(int argc, char* argv[])
     in.seekg(0, std::ios::beg);
     in.read(static_cast<char*>(static_cast<void*>(data.data())), data.size() * 4);
     auto prog = algrad::compiler::loadSPIRV(data.data(), data.data() + data.size(), "main");
+    algrad::compiler::orderBlocksRPO(*prog);
     algrad::compiler::splitComposites(*prog);
     algrad::compiler::promoteVariables(*prog);
     algrad::compiler::eliminateDeadCode(*prog);

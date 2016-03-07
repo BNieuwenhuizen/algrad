@@ -159,6 +159,12 @@ BasicBlock::id() const noexcept
     return id_;
 }
 
+inline void
+BasicBlock::setId(int v) noexcept
+{
+    id_ = v;
+}
+
 inline Inst&
 BasicBlock::insertFront(std::unique_ptr<Inst> insn) noexcept
 {
@@ -230,7 +236,7 @@ Program::defIdCount() const noexcept
     return nextDefIndex_;
 }
 
-inline std::vector<std::unique_ptr<BasicBlock>> const&
+inline std::vector<std::unique_ptr<BasicBlock>>&
 Program::basicBlocks() noexcept
 {
     return basicBlocks_;
@@ -249,9 +255,11 @@ Program::insertVariable(std::unique_ptr<Inst> inst) noexcept
     return *inst.release();
 }
 
-inline std::unique_ptr<Inst> Program::eraseVariable(Inst& inst) noexcept {
-	variables_.erase(InstList::s_iterator_to(inst));
-	return std::unique_ptr<Inst>{&inst};
+inline std::unique_ptr<Inst>
+Program::eraseVariable(Inst& inst) noexcept
+{
+    variables_.erase(InstList::s_iterator_to(inst));
+    return std::unique_ptr<Inst>{&inst};
 }
 
 inline std::vector<std::unique_ptr<Inst>>&
