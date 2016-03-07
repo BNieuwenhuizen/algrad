@@ -132,6 +132,7 @@ class ScalarConstant final : public Def
     };
 };
 
+class BasicBlock;
 class Inst final : public Def, public boost::intrusive::list_base_hook<>
 {
   public:
@@ -149,9 +150,13 @@ class Inst final : public Def, public boost::intrusive::list_base_hook<>
 
     InstFlags flags() const noexcept;
 
+    BasicBlock* parent() noexcept;
+    void setParent(BasicBlock* bb) noexcept;
+
   private:
     InstFlags flags_;
     std::vector<Use> operands_;
+    BasicBlock* parent_;
 };
 
 using InstList = boost::intrusive::list<Inst>;
@@ -248,7 +253,6 @@ void splitComposites(hir::Program& program);
 void eliminateDeadCode(hir::Program& program);
 void lowerIO(hir::Program& program);
 void orderBlocksRPO(hir::Program& program);
-
 }
 }
 

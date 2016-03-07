@@ -31,14 +31,14 @@ replace(Def& old, Def& replacement) noexcept
 Inst::Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept
   : Def{opCode, id, type},
     flags_{defaultInstFlags[static_cast<std::uint16_t>(opCode)]},
-    operands_(operandCount, Use(this))
+    operands_(operandCount, Use(this)), parent_{nullptr}
 {
 }
 
 Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept
   : Def{opCode, id, type},
     flags_{flags},
-    operands_(operandCount, Use(this))
+    operands_(operandCount, Use(this)), parent_{nullptr}
 {
 }
 

@@ -153,6 +153,18 @@ Inst::flags() const noexcept
     return flags_;
 }
 
+inline BasicBlock*
+Inst::parent() noexcept
+{
+    return parent_;
+}
+
+inline void
+Inst::setParent(BasicBlock* bb) noexcept
+{
+    parent_ = bb;
+}
+
 inline int
 BasicBlock::id() const noexcept
 {
@@ -168,6 +180,7 @@ BasicBlock::setId(int v) noexcept
 inline Inst&
 BasicBlock::insertFront(std::unique_ptr<Inst> insn) noexcept
 {
+    insn->setParent(this);
     instructions_.push_front(*insn);
     return *insn.release();
 }
@@ -175,6 +188,7 @@ BasicBlock::insertFront(std::unique_ptr<Inst> insn) noexcept
 inline Inst&
 BasicBlock::insertBack(std::unique_ptr<Inst> insn) noexcept
 {
+    insn->setParent(this);
     instructions_.push_back(*insn);
     return *insn.release();
 }
@@ -182,6 +196,7 @@ BasicBlock::insertBack(std::unique_ptr<Inst> insn) noexcept
 inline Inst&
 BasicBlock::insertBefore(Inst& pos, std::unique_ptr<Inst> inst) noexcept
 {
+    inst->setParent(this);
     instructions_.insert(InstList::s_iterator_to(pos), *inst);
     return *inst.release();
 }
@@ -189,6 +204,7 @@ BasicBlock::insertBefore(Inst& pos, std::unique_ptr<Inst> inst) noexcept
 inline std::unique_ptr<Inst>
 BasicBlock::erase(Inst& inst) noexcept
 {
+    inst.setParent(nullptr);
     instructions_.erase(InstList::s_iterator_to(inst));
     return std::unique_ptr<Inst>{&inst};
 }
