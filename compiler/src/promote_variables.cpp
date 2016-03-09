@@ -52,7 +52,7 @@ splitVariables(Program& program)
             auto type = static_cast<PointerTypeInfo const*>(v.type())->pointeeType();
             auto count = compositeCount(type);
             for (std::size_t i = 0; i < count; ++i) {
-                auto ptrType = program.types().pointerType(type, StorageKind::invocation);
+                auto ptrType = program.types().pointerType(compositeType(type, i), StorageKind::invocation);
                 auto newVar = program.createDef<Inst>(OpCode::variable, ptrType, 0);
                 newVars.push_back(newVar.get());
                 program.insertVariable(std::move(newVar));
