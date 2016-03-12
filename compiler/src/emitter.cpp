@@ -1,6 +1,6 @@
 #include "lir.hpp"
 
-#include <iostream>
+#include <fstream>
 #include <unordered_map>
 
 namespace algrad {
@@ -303,12 +303,9 @@ emit(lir::Program& program)
             }
         }
     }
-    std::cout << std::hex;
-    unsigned index = 0;
-    for (auto e : em.data()) {
-        std::cout << index++ << " " << e << "\n";
-    }
-    std::cout << std::dec;
+    std::ofstream os("test.bin");
+    auto const& vec = em.data();
+    os.write(static_cast<char const*>(static_cast<void const*>(vec.data())), vec.size() * sizeof(std::uint32_t));
 }
 }
 }
