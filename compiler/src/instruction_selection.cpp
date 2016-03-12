@@ -110,26 +110,31 @@ selectInstructions(hir::Program& program)
                     p1->getDefinition(0) = lir::Arg{tmp};
                     p1->getOperand(0) = lir::Arg{getSingleVGPR(ctx, *insn.getOperand(1))};
                     p1->getOperand(1) = lir::Arg{getSingleSGPR(ctx, *insn.getOperand(0)), lir::PhysReg{124}};
+                    p1->aux().vintrp.attribute = attribute;
+                    p1->aux().vintrp.channel = component;
 
                     p2->getDefinition(0) = lir::Arg{getReg(ctx, insn, lir::RegClass::vgpr, 4)};
                     p2->getOperand(0) = lir::Arg{tmp};
                     p2->getOperand(1) = lir::Arg{getSingleVGPR(ctx, *insn.getOperand(2))};
                     p2->getOperand(2) = lir::Arg{getSingleSGPR(ctx, *insn.getOperand(0)), lir::PhysReg{124}};
+                    p2->aux().vintrp.attribute = attribute;
+                    p2->aux().vintrp.channel = component;
 
-		    lbb.instructions().emplace_back(std::move(p2));
+                    lbb.instructions().emplace_back(std::move(p2));
                     lbb.instructions().emplace_back(std::move(p1));
                 } break;
                 case hir::OpCode::gcnExport: {
-                    auto enabledMask = static_cast<hir::ScalarConstant*>(insn.getOperand(0))->integerValue();
-                    auto dest = static_cast<hir::ScalarConstant*>(insn.getOperand(1))->integerValue();
-                    auto compressed = static_cast<hir::ScalarConstant*>(insn.getOperand(2))->integerValue();
-                    auto exp = std::make_unique<lir::Inst>(lir::OpCode::exp, 0,
-                                                           4); //(enabledMask, dest, compressed, true, true);
+                    auto exp = std::make_unique<lir::Inst>(lir::OpCode::exp, 0, 4);
 
                     exp->getOperand(0) = lir::Arg{getSingleVGPR(ctx, *insn.getOperand(3))};
                     exp->getOperand(1) = lir::Arg{getSingleVGPR(ctx, *insn.getOperand(4))};
                     exp->getOperand(2) = lir::Arg{getSingleVGPR(ctx, *insn.getOperand(5))};
                     exp->getOperand(3) = lir::Arg{getSingleVGPR(ctx, *insn.getOperand(6))};
+                    exp->aux().exp.enable = static_cast<hir::ScalarConstant*>(insn.getOperand(0))->integerValue();
+                    exp->aux().exp.target = static_cast<hir::ScalarConstant*>(insn.getOperand(1))->integerValue();
+                    exp->aux().exp.compressed = static_cast<hir::ScalarConstant*>(insn.getOperand(2))->integerValue();
+                    exp->aux().exp.done = true;
+                    exp->aux().exp.validMask = true;
 
                     lbb.instructions().emplace_back(std::move(exp));
                 } break;

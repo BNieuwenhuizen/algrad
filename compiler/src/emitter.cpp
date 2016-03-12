@@ -250,25 +250,25 @@ emitParallelCopy(Emitter& em, lir::Inst& insn)
                 auto const& op = copies[i].first;
                 auto const& def = copies[i].second;
 
-		if(op.regClass() == lir::RegClass::sgpr && def.regClass() == lir::RegClass::sgpr) {
-			if(op.size() == 4)
-				em.encodeSOP1(SOP1OpCode::s_mov_b32, def, op);
-			else
-				std::terminate();
-		} else if(def.regClass() == lir::RegClass::vgpr) {
-			if(op.size() == 4)
-				em.encodeVOP1(VOP1OpCode::v_mov_b32, def, op);
-			else
-				std::terminate();
-		} else
-			std::terminate();
+                if (op.regClass() == lir::RegClass::sgpr && def.regClass() == lir::RegClass::sgpr) {
+                    if (op.size() == 4)
+                        em.encodeSOP1(SOP1OpCode::s_mov_b32, def, op);
+                    else
+                        std::terminate();
+                } else if (def.regClass() == lir::RegClass::vgpr) {
+                    if (op.size() == 4)
+                        em.encodeVOP1(VOP1OpCode::v_mov_b32, def, op);
+                    else
+                        std::terminate();
+                } else
+                    std::terminate();
 
                 copies.erase(copies.begin() + i);
                 --i;
             }
         }
-        if(!progress)
-		std::terminate();
+        if (!progress)
+            std::terminate();
     }
 }
 }
@@ -284,14 +284,17 @@ emit(lir::Program& program)
                     emitParallelCopy(em, *insn);
                     break;
                 case lir::OpCode::v_interp_p1_f32:
-                    em.encodeVINTRP(VINTRPOpCode::v_interp_p1_f32, 0, 0, insn->getDefinition(0), insn->getOperand(0));
+                    em.encodeVINTRP(VINTRPOpCode::v_interp_p1_f32, insn->aux().vintrp.attribute,
+                                    insn->aux().vintrp.channel, insn->getDefinition(0), insn->getOperand(0));
                     break;
                 case lir::OpCode::v_interp_p2_f32:
-                    em.encodeVINTRP(VINTRPOpCode::v_interp_p2_f32, 0, 0, insn->getDefinition(0), insn->getOperand(1));
+                    em.encodeVINTRP(VINTRPOpCode::v_interp_p2_f32, insn->aux().vintrp.attribute,
+                                    insn->aux().vintrp.channel, insn->getDefinition(0), insn->getOperand(1));
                     break;
                 case lir::OpCode::exp:
-                    em.encodeEXP(15, 12, false, true, false, insn->getOperand(0), insn->getOperand(1),
-                                 insn->getOperand(2), insn->getOperand(3));
+                    em.encodeEXP(insn->aux().exp.enable, insn->aux().exp.target, insn->aux().exp.compressed,
+                                 insn->aux().exp.done, insn->aux().exp.validMask, insn->getOperand(0),
+                                 insn->getOperand(1), insn->getOperand(2), insn->getOperand(3));
                     break;
                 case lir::OpCode::s_endpgm:
                     em.encodeSOPP(SOPPOpCode::s_endpgm, 0);

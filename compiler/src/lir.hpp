@@ -125,6 +125,27 @@ enum class OpCode : std::uint16_t
 #undef HANDLE
 };
 
+struct AuxiliaryVINTRPInfo
+{
+    unsigned attribute;
+    unsigned channel;
+};
+
+struct AuxiliaryEXPInfo
+{
+    unsigned enable : 4;
+    unsigned target : 6;
+    bool compressed : 1;
+    bool done : 1;
+    bool validMask : 1;
+};
+
+union AuxiliaryInstInfo
+{
+    AuxiliaryVINTRPInfo vintrp;
+    AuxiliaryEXPInfo exp;
+};
+
 class Inst final
 {
   public:
@@ -138,6 +159,9 @@ class Inst final
 
     std::size_t definitionCount() const noexcept { return defCount_; }
     Arg& getDefinition(std::size_t index) noexcept { return args()[index]; }
+
+    AuxiliaryInstInfo& aux() noexcept { return aux_; }
+    AuxiliaryInstInfo const& aux() const noexcept { return aux_; }
 
   private:
     Arg* args() noexcept;
@@ -156,6 +180,8 @@ class Inst final
         Arg internalArgs_[4];
         Arg* externalArgs_;
     };
+
+    AuxiliaryInstInfo aux_;
 };
 
 class Block
