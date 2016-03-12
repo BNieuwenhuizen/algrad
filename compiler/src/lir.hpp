@@ -61,8 +61,7 @@ class Temp final
     using ClassField = BitField<std::uint32_t, 0, 2, RegClass>;
     using SizeField = BitField<std::uint32_t, 2, 7>;
 
-    friend class Operand;
-    friend class Def;
+    friend class Arg;
 };
 
 struct PhysReg
@@ -70,15 +69,14 @@ struct PhysReg
     unsigned reg;
 };
 
-class Operand final
+class Arg final
 {
   public:
-
-    Operand() = default;
-    explicit Operand(Temp r) noexcept;
-    Operand(Temp r, PhysReg reg) noexcept;
-    explicit Operand(std::uint32_t v) noexcept;
-    explicit Operand(float v) noexcept;
+    Arg() = default;
+    explicit Arg(Temp r) noexcept;
+    Arg(Temp r, PhysReg reg) noexcept;
+    explicit Arg(std::uint32_t v) noexcept;
+    explicit Arg(float v) noexcept;
 
     bool isTemp() const noexcept;
     Temp getTemp() const noexcept;
@@ -111,39 +109,6 @@ class Operand final
     using PhysRegField = BitField<std::uint32_t, 23, 32>;
 };
 
-class Def final
-{
-  public:
-    Def() = default;
-    explicit Def(Temp r) noexcept;
-    explicit Def(Temp t, PhysReg reg) noexcept;
-    explicit Def(PhysReg reg) noexcept;
-
-    bool isTemp() const noexcept;
-    Temp getTemp() const noexcept;
-
-    std::uint32_t tempId() const noexcept;
-    void setTempId(std::uint32_t) noexcept;
-    RegClass regClass() const noexcept;
-    unsigned size() const noexcept;
-
-    bool isFixed() const noexcept;
-    PhysReg physReg() const noexcept;
-    void setFixed(PhysReg reg) noexcept;
-
-  private:
-    std::uint32_t tempId_;
-    std::uint32_t control_;
-
-    using ClassField = BitField<std::uint32_t, 0, 2, RegClass>;
-    using SizeField = BitField<std::uint32_t, 2, 7>;
-
-    using IsTempField = BitField<std::uint32_t, 16, 17, bool>;
-
-    using FixedField = BitField<std::uint32_t, 22, 23, bool>;
-    using PhysRegField = BitField<std::uint32_t, 23, 32>;
-};
-
 #define ALGRAD_COMPILER_LIR_OPCODES(_)                                                                                 \
     _(start)                                                                                                           \
     _(parallel_copy)                                                                                                   \
@@ -160,153 +125,37 @@ enum class OpCode : std::uint16_t
 #undef HANDLE
 };
 
-class Inst
+class Inst final
 {
   public:
-    Inst(OpCode opCode) noexcept : opCode_{opCode} {}
-    virtual ~Inst() noexcept {}
-
-    boost::iterator_range<Operand*> args() noexcept;
-    boost::iterator_range<Operand const*> args() const noexcept;
+    Inst(OpCode opCode, std::size_t defCount, std::size_t opCount) noexcept;
+    ~Inst() noexcept;
 
     OpCode opCode() const noexcept;
 
-    virtual std::size_t operandCount() const noexcept { return 0; }
-    virtual Operand& getOperand(std::size_t index) noexcept { __builtin_unreachable(); }
+    std::size_t operandCount() const noexcept { return opCount_; }
+    Arg& getOperand(std::size_t index) noexcept { return args()[defCount_ + index]; }
 
-    virtual std::size_t definitionCount() const noexcept { return 0; }
-    virtual Def& getDefinition(std::size_t index) noexcept { __builtin_unreachable(); }
-
-  protected:
-    Inst(Inst&&) = default;
-    Inst(Inst const&) = default;
-    Inst& operator=(Inst&&) = default;
-    Inst& operator=(Inst const&) = default;
+    std::size_t definitionCount() const noexcept { return defCount_; }
+    Arg& getDefinition(std::size_t index) noexcept { return args()[index]; }
 
   private:
+    Arg* args() noexcept;
+    Arg const* args() const noexcept;
+
     OpCode opCode_;
-};
+    std::uint16_t defCount_;
+    std::uint16_t opCount_;
 
-template <std::size_t Op, std::size_t DefCount>
-class FixedInst : public Inst
-{
-  public:
-    FixedInst(OpCode opCode) noexcept : Inst{opCode} {}
-
-    std::size_t operandCount() const noexcept final override { return Op; }
-    Operand& getOperand(std::size_t index) noexcept final override { return operands_[index]; }
-    std::size_t definitionCount() const noexcept final override { return DefCount; }
-    Def& getDefinition(std::size_t index) noexcept final override { return defs_[index]; }
-
-  private:
-    Def defs_[DefCount];
-    Operand operands_[Op];
-};
-
-class StartInst final : public Inst
-{
-  public:
-    StartInst(std::size_t genCount)
-      : Inst{OpCode::start}
-      , defs_(genCount)
+    enum
     {
-    }
-
-    std::size_t definitionCount() const noexcept override { return defs_.size(); }
-    Def& getDefinition(std::size_t index) noexcept override { return defs_[index]; }
-
-  private:
-    std::vector<Def> defs_;
-};
-
-class ParallelCopy final : public Inst
-{
-  public:
-    ParallelCopy(std::size_t count) noexcept : Inst{OpCode::parallel_copy}, defs_(count), operands_(count) {}
-
-    std::size_t operandCount() const noexcept final override { return operands_.size(); }
-    Operand& getOperand(std::size_t index) noexcept final override { return operands_[index]; }
-    std::size_t definitionCount() const noexcept final override { return defs_.size(); }
-    Def& getDefinition(std::size_t index) noexcept final override { return defs_[index]; }
-  private:
-    std::vector<Def> defs_;
-    std::vector<Operand> operands_;
-};
-
-class PhiInstruction final : public Inst
-{
-  public:
-    PhiInstruction(std::size_t operands)
-      : Inst{OpCode::phi}
-      , operands_(operands)
+        internalArgCount_ = 4
+    };
+    union
     {
-    }
-
-    std::size_t operandCount() const noexcept final override { return operands_.size(); }
-    Operand& getOperand(std::size_t index) noexcept final override { return operands_[index]; }
-    std::size_t definitionCount() const noexcept final override { return 1; }
-    Def& getDefinition(std::size_t index) noexcept final override { return def_; }
-
-    void insertOperand(std::size_t index, Operand op) { operands_.insert(operands_.begin() + index, op); }
-
-    void eraseOperand(std::size_t index) noexcept { operands_.erase(operands_.begin() + index); }
-  private:
-    Def def_;
-    std::vector<Operand> operands_;
-};
-
-class VInterpP1F32Inst final : public FixedInst<2, 1>
-{
-  public:
-    VInterpP1F32Inst(unsigned attribute, unsigned component) noexcept : FixedInst{OpCode::v_interp_p1_f32},
-                                                                        attribute_{attribute},
-                                                                        component_{component}
-    {
-    }
-
-  private:
-    unsigned attribute_;
-    unsigned component_;
-};
-
-class VInterpP2F32Inst final : public FixedInst<3, 1>
-{
-  public:
-    VInterpP2F32Inst(unsigned attribute, unsigned component) noexcept : FixedInst{OpCode::v_interp_p2_f32},
-                                                                        attribute_{attribute},
-                                                                        component_{component}
-    {
-    }
-
-  private:
-    unsigned attribute_;
-    unsigned component_;
-};
-
-class ExportInst final : public FixedInst<4, 0>
-{
-  public:
-    ExportInst(unsigned enabledMask, unsigned dest, bool compressed, bool done, bool validMask) noexcept
-      : FixedInst{OpCode::exp},
-        enabledMask_{enabledMask},
-        dest_{dest},
-        compressed_{compressed},
-        done_{done},
-        validMask_{validMask}
-    {
-    }
-
-  private:
-    unsigned enabledMask_;
-    unsigned dest_;
-    bool compressed_;
-    bool done_;
-    bool validMask_;
-};
-class EndProgramInstruction final : public Inst
-{
-  public:
-    EndProgramInstruction() noexcept : Inst{OpCode::s_endpgm} {}
+        Arg internalArgs_[4];
+        Arg* externalArgs_;
+    };
 };
 
 class Block
@@ -373,184 +222,130 @@ Temp::size() const noexcept
     return SizeField::extract(control_);
 }
 
-inline Operand::Operand(Temp r) noexcept : data_{r.id_}, control_{r.control_ | IsTempField::place(true)}
+inline Arg::Arg(Temp r) noexcept : data_{r.id_}, control_{r.control_ | IsTempField::place(true)}
 {
 }
 
-inline Operand::Operand(Temp r, PhysReg reg) noexcept
+inline Arg::Arg(Temp r, PhysReg reg) noexcept
   : data_{r.id_},
     control_{r.control_ | IsTempField::place(true) | FixedField::place(true) | PhysRegField::place(reg.reg)}
 {
 }
 
-inline Operand::Operand(std::uint32_t v) noexcept : data_{v}, control_{IsTempField::place(false)}
+inline Arg::Arg(std::uint32_t v) noexcept : data_{v}, control_{IsTempField::place(false)}
 {
 }
 
-inline Operand::Operand(float v) noexcept : control_{IsTempField::place(false)}
+inline Arg::Arg(float v) noexcept : control_{IsTempField::place(false)}
 {
     std::memcpy(&data_, &v, sizeof(float));
 }
 
 inline bool
-Operand::isTemp() const noexcept
+Arg::isTemp() const noexcept
 {
     return IsTempField::extract(control_);
 }
 
 inline Temp
-Operand::getTemp() const noexcept
+Arg::getTemp() const noexcept
 {
     return Temp{data_, control_ & (ClassField::mask | SizeField::mask)};
 }
 
 inline std::uint32_t
-Operand::tempId() const noexcept
+Arg::tempId() const noexcept
 {
     assert(isTemp());
     return data_;
 }
 
 inline void
-Operand::setTempId(std::uint32_t id) noexcept
+Arg::setTempId(std::uint32_t id) noexcept
 {
     assert(isTemp());
     data_ = id;
 }
 
 inline RegClass
-Operand::regClass() const noexcept
+Arg::regClass() const noexcept
 {
     assert(isTemp());
     return ClassField::extract(control_);
 }
 
 inline unsigned
-Operand::size() const noexcept
+Arg::size() const noexcept
 {
     assert(isTemp());
     return SizeField::extract(control_);
 }
 
 inline bool
-Operand::isFixed() const noexcept
+Arg::isFixed() const noexcept
 {
     return FixedField::extract(control_);
 }
 
 inline PhysReg
-Operand::physReg() const noexcept
+Arg::physReg() const noexcept
 {
     return {PhysRegField::extract(control_)};
 }
 
 inline void
-Operand::setFixed(PhysReg reg) noexcept
+Arg::setFixed(PhysReg reg) noexcept
 {
     control_ = FixedField::insert(PhysRegField::insert(control_, reg.reg), true);
 }
 
 inline bool
-Operand::isConstant() const noexcept
+Arg::isConstant() const noexcept
 {
     return !isTemp();
 }
 
 inline std::uint32_t
-Operand::constantValue() const noexcept
+Arg::constantValue() const noexcept
 {
     assert(isConstant());
     return data_;
 }
 
 inline void
-Operand::setKill(bool b) noexcept
+Arg::setKill(bool b) noexcept
 {
     control_ = KillField::insert(control_, b);
 }
 
 inline bool
-Operand::kill() const noexcept
+Arg::kill() const noexcept
 {
     return KillField::extract(control_);
-}
-
-inline Def::Def(Temp r) noexcept : tempId_{r.id_}, control_{r.control_ | IsTempField::place(true)}
-{
-}
-
-inline Def::Def(Temp t, PhysReg reg) noexcept
-  : tempId_{t.id_},
-    control_{t.control_ | IsTempField::place(true) | FixedField::place(true) | PhysRegField::place(reg.reg)}
-{
-}
-
-inline Def::Def(PhysReg reg) noexcept : tempId_{0}, control_{FixedField::place(true) | PhysRegField::place(reg.reg)}
-{
-}
-
-inline bool
-Def::isTemp() const noexcept
-{
-    return IsTempField::extract(control_);
-}
-
-inline Temp
-Def::getTemp() const noexcept
-{
-    return Temp{tempId_, control_ & (ClassField::mask | SizeField::mask)};
-}
-
-inline std::uint32_t
-Def::tempId() const noexcept
-{
-    assert(isTemp());
-    return tempId_;
-}
-
-inline void
-Def::setTempId(std::uint32_t id) noexcept
-{
-    assert(isTemp());
-    tempId_ = id;
-}
-
-inline RegClass
-Def::regClass() const noexcept
-{
-    assert(isTemp());
-    return ClassField::extract(control_);
-}
-
-inline unsigned
-Def::size() const noexcept
-{
-    assert(isTemp());
-    return SizeField::extract(control_);
-}
-
-inline bool
-Def::isFixed() const noexcept
-{
-    return FixedField::extract(control_);
-}
-
-inline PhysReg
-Def::physReg() const noexcept
-{
-    return {PhysRegField::extract(control_)};
-}
-
-inline void
-Def::setFixed(PhysReg reg) noexcept
-{
-    control_ = FixedField::insert(PhysRegField::insert(control_, reg.reg), true);
 }
 
 inline OpCode
 Inst::opCode() const noexcept
 {
     return opCode_;
+}
+
+inline Arg*
+Inst::args() noexcept
+{
+    if (defCount_ + opCount_ > internalArgCount_)
+        return externalArgs_;
+    else
+        return internalArgs_;
+}
+
+inline Arg const*
+Inst::args() const noexcept
+{
+    if (defCount_ + opCount_ > internalArgCount_)
+        return externalArgs_;
+    else
+        return internalArgs_;
 }
 
 inline std::vector<std::unique_ptr<Inst>>&
@@ -641,6 +436,7 @@ Program::blocks() noexcept
 
 std::unique_ptr<lir::Program> selectInstructions(hir::Program& program);
 void allocateRegisters(lir::Program& program);
+void emit(lir::Program& program);
 }
 }
 #endif

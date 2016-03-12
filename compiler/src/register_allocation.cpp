@@ -1,5 +1,6 @@
 #include "lir.hpp"
 
+#include <iostream>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -39,11 +40,11 @@ insertCopies(lir::Program& program)
 
             instructions.push_back(std::move(insn));
             if (needMove && !live.empty()) {
-                auto copy = std::make_unique<lir::ParallelCopy>(live.size());
+                auto copy = std::make_unique<lir::Inst>(lir::OpCode::parallel_copy, live.size(), live.size());
                 unsigned idx = 0;
                 for (auto e : live) {
-                    copy->getOperand(idx) = lir::Operand{e.second};
-                    copy->getDefinition(idx) = lir::Def{e.second};
+                    copy->getOperand(idx) = lir::Arg{e.second};
+                    copy->getDefinition(idx) = lir::Arg{e.second};
                     ++idx;
                 }
                 instructions.push_back(std::move(copy));
@@ -113,7 +114,7 @@ colorRegisters(lir::Program& program)
 
             auto opCount = inst->operandCount();
             for (std::size_t i = 0; i < opCount; ++i) {
-                auto arg = inst->getOperand(i);
+                auto& arg = inst->getOperand(i);
                 if (arg.isTemp()) {
                     if (live.find(arg.tempId()) == live.end())
                         arg.setKill(live.find(arg.tempId()) == live.end());
@@ -121,7 +122,7 @@ colorRegisters(lir::Program& program)
             }
 
             for (std::size_t i = 0; i < opCount; ++i) {
-                auto arg = inst->getOperand(i);
+                auto& arg = inst->getOperand(i);
                 if (arg.isTemp()) {
                     live[arg.tempId()] = arg.getTemp();
                 }
@@ -133,10 +134,11 @@ colorRegisters(lir::Program& program)
         for (auto it = bb->instructions().begin(); it != bb->instructions().end(); ++it) {
             auto opCount = (*it)->operandCount();
             for (std::size_t i = 0; i < opCount; ++i) {
-                auto arg = (*it)->getOperand(i);
+                auto& arg = (*it)->getOperand(i);
                 if (arg.isTemp()) {
                     if (arg.kill())
                         colorsUsed[colors[arg.tempId()]] = false;
+		    std::cout << it->get() << " " << arg.tempId() << " " << colors[arg.tempId()] << "\n";
                     arg.setFixed(lir::PhysReg{static_cast<unsigned>(colors[arg.tempId()])});
                 }
             }

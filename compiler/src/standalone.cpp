@@ -28,4 +28,6 @@ main(int argc, char* argv[])
     auto lprog = algrad::compiler::selectInstructions(*prog);
     algrad::compiler::allocateRegisters(*lprog);
     print(std::cout, *lprog);
+
+    algrad::compiler::emit(*lprog);
 }

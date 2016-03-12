@@ -13,7 +13,8 @@ add_library(algrad-compiler STATIC src/types.cpp
                                    src/instruction_selection.cpp
                                    src/register_allocation.cpp
                                    src/hir_inlines.hpp
-                                   src/control_flow.cpp)
+                                   src/control_flow.cpp
+                                   src/emitter.cpp)
 
 set_property(TARGET algrad-compiler PROPERTY CXX_STANDARD 14)
 set_property(TARGET algrad-compiler PROPERTY CXX_STANDARD_REQUIRED ON)
