@@ -74,7 +74,13 @@ getVSRC(lir::Arg arg, bool& extended, std::uint32_t& extension)
 
 enum class SOP2OpCode
 {
-    s_add_u32 = 0
+    s_add_u32 = 0,
+    s_and_b32 = 12,
+    s_and_b64 = 13,
+    s_or_b32 = 14,
+    s_or_b64 = 15,
+    s_andn2_b32 = 18,
+    s_andn2_b64 = 19
 };
 
 enum class SOP1OpCode
@@ -100,6 +106,11 @@ enum class VOP1OpCode
 {
     v_nop = 0,
     v_mov_b32 = 1,
+};
+
+enum class VOPCOpCode
+{
+    v_cmp_lt_f32 = 0x41
 };
 
 enum class VINTRPOpCode
@@ -164,6 +175,16 @@ class Emitter
         std::uint32_t extension;
         data_.push_back((0b0U << 31) | (static_cast<unsigned>(opCode) << 25) | (getVGPR(dest) << 17) |
                         (getVGPR(src2) << 9) | getVSRC(src1, extended, extension));
+        if (extended)
+            data_.push_back(extension);
+    }
+
+    void encodeVOPC(VOPCOpCode opCode, lir::Arg src1, lir::Arg src2)
+    {
+        bool extended = false;
+        std::uint32_t extension;
+        data_.push_back((0b0111110U << 25) | (static_cast<unsigned>(opCode) << 17) | (getVGPR(src2) << 9) |
+                        getVSRC(src1, extended, extension));
         if (extended)
             data_.push_back(extension);
     }
@@ -300,6 +321,50 @@ emit(lir::Program& program)
                     em.encodeSOPP(SOPPOpCode::s_endpgm, 0);
                     break;
                 case lir::OpCode::start:
+                    break;
+                case lir::OpCode::start_block: {
+                    if (insn->operandCount() == 0)
+                        break;
+                    if (insn->operandCount() == 1) {
+                        em.encodeSOP1(SOP1OpCode::s_mov_b64,
+                                      lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}},
+                                      insn->getOperand(0));
+                        break;
+                    }
+                    em.encodeSOP2(SOP2OpCode::s_or_b64,
+                                  lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}},
+                                  insn->getOperand(0), insn->getOperand(1));
+                    for (unsigned i = 2; i < insn->operandCount(); ++i)
+                        em.encodeSOP2(
+                          SOP2OpCode::s_or_b64, lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}},
+                          lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}}, insn->getOperand(i));
+
+                } break;
+                case lir::OpCode::v_cmp_lt_f32:
+                    em.encodeVOPC(VOPCOpCode::v_cmp_lt_f32, insn->getOperand(0), insn->getOperand(1));
+                    break;
+                case lir::OpCode::logical_branch:
+                    em.encodeSOP1(SOP1OpCode::s_mov_b64, insn->getDefinition(0),
+                                  lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}});
+                    break;
+                case lir::OpCode::logical_cond_branch:
+                    if (overlap(insn->getDefinition(0), insn->getOperand(0))) {
+                        em.encodeSOP2(SOP2OpCode::s_andn2_b64, insn->getDefinition(1),
+                                      lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}},
+                                      insn->getOperand(0));
+                        em.encodeSOP2(SOP2OpCode::s_and_b64, insn->getDefinition(0),
+                                      lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}},
+                                      insn->getOperand(0));
+                    } else {
+                        em.encodeSOP2(SOP2OpCode::s_and_b64, insn->getDefinition(0),
+                                      lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}},
+                                      insn->getOperand(0));
+                        em.encodeSOP2(SOP2OpCode::s_andn2_b64, insn->getDefinition(1),
+                                      lir::Arg{lir::Temp{~0U, lir::RegClass::sgpr, 8}, lir::PhysReg{126}},
+                                      insn->getOperand(0));
+                    }
+                    break;
+                case lir::OpCode::phi:
                     break;
                 default:
                     std::terminate();

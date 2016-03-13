@@ -4,8 +4,69 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <boost/range/adaptor/reversed.hpp>
+
 namespace algrad {
 namespace compiler {
+
+std::unordered_set<unsigned>
+getLiveOut(std::vector<std::unordered_set<unsigned>>& liveIn, lir::Block& bb, bool logical)
+{
+    std::unordered_set<unsigned> ret;
+    for (auto succ : (logical ? bb.logicalSuccessors() : bb.linearizedSuccessors())) {
+        ret.insert(liveIn[succ->id()].begin(), liveIn[succ->id()].end());
+        int index = -1;
+        unsigned i = 0;
+        for (auto pred : (logical ? succ->logicalPredecessors() : succ->linearizedPredecessors())) {
+            if (pred == &bb)
+                index = i;
+            ++i;
+        }
+
+        for (auto& insn : succ->instructions()) {
+            if (insn->opCode() != lir::OpCode::phi)
+                break;
+            if ((logical && insn->getDefinition(0).regClass() == lir::RegClass::vgpr) ||
+                (!logical && insn->getDefinition(0).regClass() != lir::RegClass::vgpr))
+                ret.insert(insn->getOperand(index).tempId());
+        }
+    }
+
+    return ret;
+}
+std::vector<std::unordered_set<unsigned>>
+computeLiveIn(lir::Program& program, bool logical)
+{
+    std::vector<std::unordered_set<unsigned>> liveIn(program.blocks().size());
+
+    for (;;) {
+        bool changed = false;
+        for (auto& bb : boost::adaptors::reverse(program.blocks())) {
+            auto live = getLiveOut(liveIn, *bb, logical);
+            for (auto& insn : boost::adaptors::reverse(bb->instructions())) {
+                auto defCount = insn->definitionCount();
+                for (unsigned i = 0; i < defCount; ++i) {
+                    auto it = live.find(insn->getDefinition(i).tempId());
+                    if (it != live.end())
+                        live.erase(it);
+                }
+
+                auto opCount = insn->operandCount();
+                for (unsigned i = 0; i < opCount; ++i) {
+                    if (insn->getOperand(i).isTemp())
+                        live.insert(insn->getOperand(i).tempId());
+                }
+            }
+            if (live != liveIn[bb->id()]) {
+                liveIn[bb->id()] = live;
+                changed = true;
+            }
+        }
+        if (!changed)
+            break;
+    }
+    return liveIn;
+}
 
 void
 insertCopies(lir::Program& program)
@@ -138,7 +199,7 @@ colorRegisters(lir::Program& program)
                 if (arg.isTemp()) {
                     if (arg.kill())
                         colorsUsed[colors[arg.tempId()]] = false;
-		    std::cout << it->get() << " " << arg.tempId() << " " << colors[arg.tempId()] << "\n";
+                    std::cout << it->get() << " " << arg.tempId() << " " << colors[arg.tempId()] << "\n";
                     arg.setFixed(lir::PhysReg{static_cast<unsigned>(colors[arg.tempId()])});
                 }
             }

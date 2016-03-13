@@ -1,7 +1,9 @@
 #include "hir.hpp"
 #include "hir_inlines.hpp"
 #include "lir.hpp"
+
 #include <iostream>
+#include <map>
 
 #include <boost/range/adaptor/reversed.hpp>
 
@@ -21,14 +23,19 @@ computeRegisterClasses(hir::Program& program)
                 continue;
 
             if (insn.isVarying())
-                regClasses[insn.id()] = lir::RegClass::vgpr;
+                regClasses[insn.id()] =
+                  insn.type()->kind() == TypeKind::boolean ? lir::RegClass::sgpr : lir::RegClass::vgpr;
+            else
+                regClasses[insn.id()] =
+                  insn.type()->kind() == TypeKind::boolean ? lir::RegClass::scc : lir::RegClass::sgpr;
 
             switch (insn.opCode()) {
                 default: {
                     auto operandCount = insn.operandCount();
                     for (std::size_t i = 0; i < operandCount; ++i) {
                         if (regClasses[insn.getOperand(i)->id()] == lir::RegClass::vgpr)
-                            regClasses[insn.id()] = lir::RegClass::vgpr;
+                            regClasses[insn.id()] =
+                              insn.type()->kind() == TypeKind::boolean ? lir::RegClass::sgpr : lir::RegClass::vgpr;
                     }
                 }
             }
@@ -42,6 +49,8 @@ struct SelectionContext
     std::vector<lir::RegClass> regClasses;
     std::vector<std::uint32_t> regMap;
     lir::Program* lprog;
+
+    std::map<std::pair<lir::Block*, lir::Block*>, unsigned> controlFlowVars;
 };
 
 lir::Temp
@@ -51,7 +60,19 @@ getReg(SelectionContext& ctx, hir::Def& def, lir::RegClass rc, unsigned size)
         ctx.regMap[def.id()] = ctx.lprog->allocateId();
     }
 
+    if (rc != ctx.regClasses[def.id()])
+        std::terminate();
     return lir::Temp{ctx.regMap[def.id()], rc, size};
+}
+
+lir::Temp
+getReg(SelectionContext& ctx, hir::Def& def)
+{
+    if (ctx.regMap[def.id()] == ~0U) {
+        ctx.regMap[def.id()] = ctx.lprog->allocateId();
+    }
+
+    return lir::Temp{ctx.regMap[def.id()], ctx.regClasses[def.id()], 4};
 }
 
 lir::Temp
@@ -77,6 +98,68 @@ createStartInstruction(SelectionContext& ctx, lir::Program& lprog, hir::Program&
     lprog.blocks().front()->instructions().push_back(std::move(newInst));
 }
 
+void
+createVectorCompare(SelectionContext& ctx, lir::OpCode opCode, hir::Inst& inst, lir::Block& lbb)
+{
+    auto newInst = std::make_unique<lir::Inst>(opCode, 1, 2);
+    newInst->getOperand(0) = lir::Arg{getReg(ctx, *inst.getOperand(0))};
+    newInst->getOperand(1) = lir::Arg{getReg(ctx, *inst.getOperand(1))};
+    newInst->getDefinition(0) = lir::Arg{getReg(ctx, inst), lir::PhysReg{106}};
+
+    lbb.instructions().push_back(std::move(newInst));
+}
+
+void
+createLogicalCondBranch(SelectionContext& ctx, hir::Inst& inst, lir::Block& lbb)
+{
+    auto newInst = std::make_unique<lir::Inst>(lir::OpCode::logical_cond_branch, 2, 1);
+    newInst->getOperand(0) = lir::Arg{getReg(ctx, *inst.getOperand(0))};
+
+    newInst->getDefinition(0) =
+      lir::Arg{lir::Temp{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[0]})->second, lir::RegClass::sgpr, 8}};
+    newInst->getDefinition(1) =
+      lir::Arg{lir::Temp{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[1]})->second, lir::RegClass::sgpr, 8}};
+    lbb.instructions().push_back(std::move(newInst));
+}
+
+void
+createLogicalBranch(SelectionContext& ctx, hir::Inst& inst, lir::Block& lbb)
+{
+    auto newInst = std::make_unique<lir::Inst>(lir::OpCode::logical_branch, 1, 0);
+
+    newInst->getDefinition(0) =
+      lir::Arg{lir::Temp{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[0]})->second, lir::RegClass::sgpr, 8}};
+    lbb.instructions().push_back(std::move(newInst));
+}
+
+void
+createVectorPhi(SelectionContext& ctx, hir::Inst& inst, lir::Block& lbb)
+{
+    auto newInst = std::make_unique<lir::Inst>(lir::OpCode::phi, 1, lbb.logicalPredecessors().size());
+    for (unsigned i = 0; i < lbb.logicalPredecessors().size(); ++i) {
+        newInst->getOperand(i) = lir::Arg{getReg(ctx, *inst.getOperand(i))};
+    }
+    newInst->getDefinition(0) = lir::Arg{getReg(ctx, inst)};
+
+    lbb.instructions().push_back(std::move(newInst));
+}
+
+void
+createBlockStart(SelectionContext& ctx, lir::Block& lbb, hir::Program& program)
+{
+    if (lbb.linearizedPredecessors().empty()) {
+        createStartInstruction(ctx, *ctx.lprog, program);
+        return;
+    }
+
+    auto newInst = std::make_unique<lir::Inst>(lir::OpCode::start_block, 0, lbb.logicalPredecessors().size());
+    for (unsigned i = 0; i < lbb.logicalPredecessors().size(); ++i) {
+        newInst->getOperand(i) = lir::Arg{
+          lir::Temp{ctx.controlFlowVars.find({lbb.logicalPredecessors()[i], &lbb})->second, lir::RegClass::sgpr, 8}};
+    }
+
+    lbb.instructions().push_back(std::move(newInst));
+}
 std::unique_ptr<lir::Program>
 selectInstructions(hir::Program& program)
 {
@@ -88,13 +171,31 @@ selectInstructions(hir::Program& program)
     ctx.lprog = lprog.get();
 
     for (auto& bb : program.basicBlocks()) {
-        ctx.lprog->blocks().push_back(std::make_unique<lir::Block>());
+        ctx.lprog->blocks().push_back(std::make_unique<lir::Block>(bb->id()));
+    }
+    for (int i = program.basicBlocks().size() - 1; i >= 0; --i) {
+        auto& bb = *program.basicBlocks()[i];
+        auto& lbb = *ctx.lprog->blocks()[i];
+
+        if (i + 1 < program.basicBlocks().size()) {
+            lir::findOrInsertBlock(lbb.linearizedSuccessors(), ctx.lprog->blocks()[i + 1].get());
+            lir::findOrInsertBlock(ctx.lprog->blocks()[i + 1]->linearizedPredecessors(), &lbb);
+        }
+
+        for (auto pred : bb.predecessors())
+            lbb.logicalPredecessors().push_back(ctx.lprog->blocks()[pred->id()].get());
+
+        for (auto succ : bb.successors()) {
+            lbb.logicalSuccessors().push_back(ctx.lprog->blocks()[succ->id()].get());
+            ctx.controlFlowVars.insert({{&lbb, ctx.lprog->blocks()[succ->id()].get()}, ctx.lprog->allocateId()});
+        }
     }
 
     for (int i = program.basicBlocks().size() - 1; i >= 0; --i) {
         auto& bb = *program.basicBlocks()[i];
         auto& lbb = *ctx.lprog->blocks()[i];
 
+        bool emittedBlockStart = false;
         for (auto& insn : boost::adaptors::reverse(bb.instructions())) {
             switch (insn.opCode()) {
                 case hir::OpCode::ret:
@@ -138,13 +239,34 @@ selectInstructions(hir::Program& program)
 
                     lbb.instructions().emplace_back(std::move(exp));
                 } break;
+                case hir::OpCode::orderedLessThan:
+                    createVectorCompare(ctx, lir::OpCode::v_cmp_lt_f32, insn, lbb);
+                    break;
+                case hir::OpCode::phi: {
+                    if (!emittedBlockStart) {
+                        createBlockStart(ctx, lbb, program);
+                        emittedBlockStart = true;
+                    }
+                    if (ctx.regClasses[insn.id()] == lir::RegClass::vgpr)
+                        createVectorPhi(ctx, insn, lbb);
+                    else
+                        std::terminate();
+                } break;
+                case hir::OpCode::condBranch: {
+                    createLogicalCondBranch(ctx, insn, lbb);
+                } break;
+                case hir::OpCode::branch:
+                    createLogicalBranch(ctx, insn, lbb);
+                    break;
                 default:
                     std::terminate();
             }
         }
+        if (!emittedBlockStart) {
+            createBlockStart(ctx, lbb, program);
+            emittedBlockStart = true;
+        }
     }
-
-    createStartInstruction(ctx, *ctx.lprog, program);
 
     for (auto& b : ctx.lprog->blocks())
         std::reverse(b->instructions().begin(), b->instructions().end());

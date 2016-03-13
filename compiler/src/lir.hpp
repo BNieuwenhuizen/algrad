@@ -111,9 +111,13 @@ class Arg final
 
 #define ALGRAD_COMPILER_LIR_OPCODES(_)                                                                                 \
     _(start)                                                                                                           \
+    _(start_block)                                                                                                     \
     _(parallel_copy)                                                                                                   \
     _(phi)                                                                                                             \
+    _(logical_branch)                                                                                                  \
+    _(logical_cond_branch)                                                                                             \
     _(s_endpgm)                                                                                                        \
+    _(v_cmp_lt_f32)                                                                                                    \
     _(exp)                                                                                                             \
     _(v_interp_p1_f32)                                                                                                 \
     _(v_interp_p2_f32)
@@ -187,6 +191,10 @@ class Inst final
 class Block
 {
   public:
+    Block(int id) noexcept : id_{id} {}
+
+    int id() const noexcept { return id_; }
+
     std::vector<std::unique_ptr<Inst>>& instructions() noexcept;
 
     std::vector<Block*>& logicalPredecessors() noexcept;
@@ -195,6 +203,7 @@ class Block
     std::vector<Block*>& linearizedSuccessors() noexcept;
 
   private:
+    int id_;
     std::vector<std::unique_ptr<Inst>> instructions_;
     std::vector<Block *> logicalPredecessors_, logicalSuccessors_;
     std::vector<Block *> linearizedPredecessors_, linearizedSuccessors_;
