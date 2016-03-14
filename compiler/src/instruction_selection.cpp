@@ -54,25 +54,21 @@ struct SelectionContext
 };
 
 lir::Temp
-getReg(SelectionContext& ctx, hir::Def& def, lir::RegClass rc, unsigned size)
+getReg(SelectionContext& ctx, hir::Def& def)
 {
+    lir::RegClass rc = ctx.regClasses[def.id()];
+    unsigned size = 4;
     if (ctx.regMap[def.id()] == ~0U) {
         ctx.regMap[def.id()] = ctx.lprog->allocateId();
     }
 
-    if (rc != ctx.regClasses[def.id()])
-        std::terminate();
     return lir::Temp{ctx.regMap[def.id()], rc, size};
 }
 
 lir::Temp
-getReg(SelectionContext& ctx, hir::Def& def)
+getReg(SelectionContext& ctx, hir::Def& def, lir::RegClass rc, unsigned size)
 {
-    if (ctx.regMap[def.id()] == ~0U) {
-        ctx.regMap[def.id()] = ctx.lprog->allocateId();
-    }
-
-    return lir::Temp{ctx.regMap[def.id()], ctx.regClasses[def.id()], 4};
+    return getReg(ctx, def);
 }
 
 lir::Temp
