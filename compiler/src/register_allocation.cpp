@@ -9,40 +9,44 @@
 namespace algrad {
 namespace compiler {
 
-std::unordered_set<unsigned>
-getLiveOut(std::vector<std::unordered_set<unsigned>>& liveIn, lir::Block& bb, bool logical)
-{
-    std::unordered_set<unsigned> ret;
-    for (auto succ : (logical ? bb.logicalSuccessors() : bb.linearizedSuccessors())) {
-        ret.insert(liveIn[succ->id()].begin(), liveIn[succ->id()].end());
-        int index = -1;
-        unsigned i = 0;
-        for (auto pred : (logical ? succ->logicalPredecessors() : succ->linearizedPredecessors())) {
-            if (pred == &bb)
-                index = i;
-            ++i;
-        }
+using LiveSet = std::unordered_map<unsigned, std::pair<lir::RegClass, unsigned>>;
 
-        for (auto& insn : succ->instructions()) {
-            if (insn->opCode() != lir::OpCode::phi)
-                break;
-            if ((logical && insn->getDefinition(0).regClass() == lir::RegClass::vgpr) ||
-                (!logical && insn->getDefinition(0).regClass() != lir::RegClass::vgpr))
-                ret.insert(insn->getOperand(index).tempId());
+LiveSet
+getLiveOut(std::vector<LiveSet>& liveIn, lir::Block& bb)
+{
+    LiveSet ret;
+    for (int logical = 0; logical < 2; ++logical) {
+        for (auto succ : (logical ? bb.logicalSuccessors() : bb.linearizedSuccessors())) {
+            ret.insert(liveIn[succ->id()].begin(), liveIn[succ->id()].end());
+            int index = -1;
+            unsigned i = 0;
+            for (auto pred : (logical ? succ->logicalPredecessors() : succ->linearizedPredecessors())) {
+                if (pred == &bb)
+                    index = i;
+                ++i;
+            }
+
+            for (auto& insn : succ->instructions()) {
+                if (insn->opCode() != lir::OpCode::phi)
+                    break;
+                if ((logical && insn->getDefinition(0).regClass() == lir::RegClass::vgpr) ||
+                    (!logical && insn->getDefinition(0).regClass() != lir::RegClass::vgpr))
+                    ret.insert({insn->getOperand(index).tempId(),
+                                {insn->getOperand(index).regClass(), insn->getOperand(index).size()}});
+            }
         }
     }
-
     return ret;
 }
-std::vector<std::unordered_set<unsigned>>
-computeLiveIn(lir::Program& program, bool logical)
+std::vector<LiveSet>
+computeLiveIn(lir::Program& program)
 {
-    std::vector<std::unordered_set<unsigned>> liveIn(program.blocks().size());
+    std::vector<LiveSet> liveIn(program.blocks().size());
 
     for (;;) {
         bool changed = false;
         for (auto& bb : boost::adaptors::reverse(program.blocks())) {
-            auto live = getLiveOut(liveIn, *bb, logical);
+            auto live = getLiveOut(liveIn, *bb);
             for (auto& insn : boost::adaptors::reverse(bb->instructions())) {
                 auto defCount = insn->definitionCount();
                 for (unsigned i = 0; i < defCount; ++i) {
@@ -51,10 +55,13 @@ computeLiveIn(lir::Program& program, bool logical)
                         live.erase(it);
                 }
 
-                auto opCount = insn->operandCount();
-                for (unsigned i = 0; i < opCount; ++i) {
-                    if (insn->getOperand(i).isTemp())
-                        live.insert(insn->getOperand(i).tempId());
+                if (insn->opCode() != lir::OpCode::phi) {
+                    auto opCount = insn->operandCount();
+                    for (unsigned i = 0; i < opCount; ++i) {
+                        if (insn->getOperand(i).isTemp())
+                            live.insert({insn->getOperand(i).tempId(),
+                                         {insn->getOperand(i).regClass(), insn->getOperand(i).size()}});
+                    }
                 }
             }
             if (live != liveIn[bb->id()]) {
@@ -71,10 +78,12 @@ computeLiveIn(lir::Program& program, bool logical)
 void
 insertCopies(lir::Program& program)
 {
+    auto liveIn = computeLiveIn(program);
     for (auto& bb : program.blocks()) {
         std::vector<std::unique_ptr<lir::Inst>> instructions;
         instructions.reserve(bb->instructions().size());
-        std::unordered_map<unsigned, lir::Temp> live;
+        auto live = getLiveOut(liveIn, *bb);
+
         for (auto it = bb->instructions().end(); it != bb->instructions().begin();) {
             --it;
             auto& insn = *it;
@@ -95,7 +104,7 @@ insertCopies(lir::Program& program)
                 if (arg.isTemp()) {
                     if (arg.isFixed())
                         needMove = true;
-                    live[arg.tempId()] = arg.getTemp();
+                    live[arg.tempId()] = {arg.regClass(), arg.size()};
                 }
             }
 
@@ -104,8 +113,8 @@ insertCopies(lir::Program& program)
                 auto copy = std::make_unique<lir::Inst>(lir::OpCode::parallel_copy, live.size(), live.size());
                 unsigned idx = 0;
                 for (auto e : live) {
-                    copy->getOperand(idx) = lir::Arg{e.second};
-                    copy->getDefinition(idx) = lir::Arg{e.second};
+                    copy->getOperand(idx) = lir::Arg{lir::Temp{e.first, e.second.first, e.second.second}};
+                    copy->getDefinition(idx) = lir::Arg{lir::Temp{e.first, e.second.first, e.second.second}};
                     ++idx;
                 }
                 instructions.push_back(std::move(copy));
@@ -120,8 +129,8 @@ insertCopies(lir::Program& program)
 void
 fixSSA(lir::Program& program)
 {
+    std::unordered_map<std::uint32_t, std::uint32_t> renames;
     for (auto& bb : program.blocks()) {
-        std::unordered_map<std::uint32_t, std::uint32_t> renames;
         for (auto& insn : bb->instructions()) {
             auto opCount = insn->operandCount();
             for (std::size_t i = 0; i < opCount; ++i) {

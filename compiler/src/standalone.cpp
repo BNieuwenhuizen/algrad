@@ -29,5 +29,5 @@ main(int argc, char* argv[])
     algrad::compiler::allocateRegisters(*lprog);
     print(std::cout, *lprog);
 
-    algrad::compiler::emit(*lprog);
+    //algrad::compiler::emit(*lprog);
 }
