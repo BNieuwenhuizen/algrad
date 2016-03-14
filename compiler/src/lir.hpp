@@ -75,8 +75,6 @@ class Arg final
     Arg() = default;
     explicit Arg(Temp r) noexcept;
     Arg(Temp r, PhysReg reg) noexcept;
-    explicit Arg(std::uint32_t v) noexcept;
-    explicit Arg(float v) noexcept;
 
     bool isTemp() const noexcept;
     Temp getTemp() const noexcept;
@@ -107,7 +105,11 @@ class Arg final
     using KillField = BitField<std::uint32_t, 21, 22, bool>;
     using FixedField = BitField<std::uint32_t, 22, 23, bool>;
     using PhysRegField = BitField<std::uint32_t, 23, 32>;
+
+    friend Arg integerConstant(std::uint32_t v) noexcept;
 };
+
+Arg integerConstant(std::uint32_t v) noexcept;
 
 #define ALGRAD_COMPILER_LIR_OPCODES(_)                                                                                 \
     _(start)                                                                                                           \
@@ -267,13 +269,17 @@ inline Arg::Arg(Temp r, PhysReg reg) noexcept
 {
 }
 
-inline Arg::Arg(std::uint32_t v) noexcept : data_{v}, control_{IsTempField::place(false)}
-{
+inline Arg integerConstant(std::uint32_t v) noexcept {
+	Arg arg;
+	arg.data_ = v;
+	arg.control_ = Arg::IsTempField::place(false);
+	return arg;
 }
 
-inline Arg::Arg(float v) noexcept : control_{IsTempField::place(false)}
-{
-    std::memcpy(&data_, &v, sizeof(float));
+inline Arg floatConstant(float v) noexcept {
+	std::uint32_t iv;
+	std::memcpy(&iv, &v, 4);
+	return integerConstant(iv);
 }
 
 inline bool
