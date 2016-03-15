@@ -24,7 +24,6 @@ Inst::~Inst() noexcept
 }
 
 Program::Program()
-  : nextId_{0}
 {
 }
 
@@ -52,16 +51,16 @@ print(std::ostream& os, Program& program)
 	    for(std::size_t i = 0; i < insn->definitionCount(); ++i) {
 		    if(i) os << ", ";
 		    auto arg = insn->getDefinition(i);
-		    if(arg.isTemp()) {
-			    os << arg.tempId();
+		    if(arg.is_temp()) {
+			    os << arg.temp();
 		    }
 	    }
 	    os << " <- ";
 	    for(std::size_t i = 0; i < insn->operandCount(); ++i) {
 		    if(i) os << ", ";
 		    auto arg = insn->getOperand(i);
-		    if(arg.isTemp()) {
-			    os << arg.tempId();
+		    if(arg.is_temp()) {
+			    os << arg.temp();
 		    }
 	    }
 

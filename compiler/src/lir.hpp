@@ -43,46 +43,24 @@ enum class RegClass
     scc
 };
 
-class Temp final
-{
-  public:
-    Temp() = default;
-    constexpr Temp(std::uint32_t id, RegClass cls, unsigned size) noexcept;
-    constexpr Temp(std::uint32_t id, std::uint32_t control) noexcept;
-
-    std::uint32_t id() const noexcept;
-    RegClass regClass() const noexcept;
-    unsigned size() const noexcept;
-
-  private:
-    std::uint32_t id_;
-    std::uint32_t control_;
-
-    using ClassField = BitField<std::uint32_t, 0, 2, RegClass>;
-    using SizeField = BitField<std::uint32_t, 2, 7>;
-
-    friend class Arg;
-};
 
 struct PhysReg
 {
     unsigned reg;
 };
 
+using Temp_id = std::uint32_t;
+
 class Arg final
 {
   public:
     Arg() = default;
-    explicit Arg(Temp r) noexcept;
-    Arg(Temp r, PhysReg reg) noexcept;
+    explicit Arg(Temp_id r) noexcept;
+    Arg(Temp_id r, PhysReg reg) noexcept;
 
-    bool isTemp() const noexcept;
-    Temp getTemp() const noexcept;
-
-    std::uint32_t tempId() const noexcept;
-    void setTempId(std::uint32_t) noexcept;
-    RegClass regClass() const noexcept;
-    unsigned size() const noexcept;
+    bool is_temp() const noexcept;
+    Temp_id temp() const noexcept;
+    void set_temp(Temp_id id) noexcept;
 
     bool isFixed() const noexcept;
     PhysReg physReg() const noexcept;
@@ -95,16 +73,17 @@ class Arg final
     bool kill() const noexcept;
 
   private:
-    std::uint32_t data_;
+    union
+    {
+        Temp_id temp;
+	std::uint32_t constant;
+    } data_;
     std::uint32_t control_;
 
-    using ClassField = BitField<std::uint32_t, 0, 2, RegClass>;
-    using SizeField = BitField<std::uint32_t, 2, 7>;
-
     using IsTempField = BitField<std::uint32_t, 16, 17, bool>;
-    using KillField = BitField<std::uint32_t, 21, 22, bool>;
-    using FixedField = BitField<std::uint32_t, 22, 23, bool>;
-    using PhysRegField = BitField<std::uint32_t, 23, 32>;
+    using KillField = BitField<std::uint32_t, 19, 20, bool>;
+    using FixedField = BitField<std::uint32_t, 20, 21, bool>;
+    using PhysRegField = BitField<std::uint32_t, 21, 32>;
 
     friend Arg integerConstant(std::uint32_t v) noexcept;
 };
@@ -215,111 +194,73 @@ std::size_t findOrInsertBlock(std::vector<Block*>& arr, Block*);
 std::size_t renameBlock(std::vector<Block*>& arr, Block* old, Block* replacement) noexcept;
 std::size_t removeBlock(std::vector<Block*>& arr, Block*) noexcept;
 
+struct Temp_info
+{
+    RegClass reg_class;
+    unsigned size;
+};
+
 class Program
 {
   public:
     Program();
     std::vector<std::unique_ptr<Block>>& blocks() noexcept;
 
-    std::uint32_t allocateId() noexcept;
-    std::uint32_t allocatedIds() const noexcept;
+    std::uint32_t allocate_temp(RegClass reg_class, unsigned size) noexcept;
+    Temp_info const& temp_info(std::uint32_t index) const noexcept;
+    std::uint32_t allocated_temp_count() const noexcept;
 
   private:
     std::vector<std::unique_ptr<Block>> blocks_;
-    std::uint32_t nextId_;
+    std::vector<Temp_info> temps_;
 };
 
 void print(std::ostream& os, Program& program);
 
-constexpr Temp::Temp(std::uint32_t id, RegClass cls, unsigned size) noexcept
-  : id_{id},
-    control_{ClassField::place(cls) | SizeField::place(size)}
+inline Arg::Arg(Temp_id r) noexcept : data_{r}, control_{IsTempField::place(true)}
 {
 }
 
-constexpr Temp::Temp(std::uint32_t id, std::uint32_t control) noexcept : id_{id}, control_{control}
+inline Arg::Arg(Temp_id r, PhysReg reg) noexcept
+  : data_{r},
+    control_{IsTempField::place(true) | FixedField::place(true) | PhysRegField::place(reg.reg)}
 {
 }
 
-inline std::uint32_t
-Temp::id() const noexcept
+inline Arg
+integerConstant(std::uint32_t v) noexcept
 {
-    return id_;
+    Arg arg;
+    arg.data_.constant = v;
+    arg.control_ = Arg::IsTempField::place(false);
+    return arg;
 }
 
-inline RegClass
-Temp::regClass() const noexcept
+inline Arg
+floatConstant(float v) noexcept
 {
-    return ClassField::extract(control_);
-}
-
-inline unsigned
-Temp::size() const noexcept
-{
-    return SizeField::extract(control_);
-}
-
-inline Arg::Arg(Temp r) noexcept : data_{r.id_}, control_{r.control_ | IsTempField::place(true)}
-{
-}
-
-inline Arg::Arg(Temp r, PhysReg reg) noexcept
-  : data_{r.id_},
-    control_{r.control_ | IsTempField::place(true) | FixedField::place(true) | PhysRegField::place(reg.reg)}
-{
-}
-
-inline Arg integerConstant(std::uint32_t v) noexcept {
-	Arg arg;
-	arg.data_ = v;
-	arg.control_ = Arg::IsTempField::place(false);
-	return arg;
-}
-
-inline Arg floatConstant(float v) noexcept {
-	std::uint32_t iv;
-	std::memcpy(&iv, &v, 4);
-	return integerConstant(iv);
+    std::uint32_t iv;
+    std::memcpy(&iv, &v, 4);
+    return integerConstant(iv);
 }
 
 inline bool
-Arg::isTemp() const noexcept
+Arg::is_temp() const noexcept
 {
     return IsTempField::extract(control_);
 }
 
-inline Temp
-Arg::getTemp() const noexcept
+inline Temp_id
+Arg::temp() const noexcept
 {
-    return Temp{data_, control_ & (ClassField::mask | SizeField::mask)};
-}
-
-inline std::uint32_t
-Arg::tempId() const noexcept
-{
-    assert(isTemp());
-    return data_;
+    return data_.temp;
 }
 
 inline void
-Arg::setTempId(std::uint32_t id) noexcept
+Arg::set_temp(Temp_id id) noexcept
 {
-    assert(isTemp());
-    data_ = id;
-}
-
-inline RegClass
-Arg::regClass() const noexcept
-{
-    assert(isTemp());
-    return ClassField::extract(control_);
-}
-
-inline unsigned
-Arg::size() const noexcept
-{
-    assert(isTemp());
-    return SizeField::extract(control_);
+    assert(is_temp());
+    data_.temp = id;
 }
 
 inline bool
@@ -343,14 +284,14 @@ Arg::setFixed(PhysReg reg) noexcept
 inline bool
 Arg::isConstant() const noexcept
 {
-    return !isTemp();
+    return !is_temp();
 }
 
 inline std::uint32_t
 Arg::constantValue() const noexcept
 {
     assert(isConstant());
-    return data_;
+    return data_.constant;
 }
 
 inline void
@@ -457,15 +398,23 @@ removeBlock(std::vector<Block*>& arr, Block* b) noexcept
 }
 
 inline std::uint32_t
-Program::allocateId() noexcept
+Program::allocate_temp(RegClass reg_class, unsigned size) noexcept
 {
-    return nextId_++;
+    auto id = temps_.size();
+    temps_.push_back(Temp_info{reg_class, size});
+    return id;
+}
+
+inline Temp_info const&
+Program::temp_info(std::uint32_t index) const noexcept
+{
+    return temps_[index];
 }
 
 inline std::uint32_t
-Program::allocatedIds() const noexcept
+Program::allocated_temp_count() const noexcept
 {
-    return nextId_;
+    return temps_.size();
 }
 
 inline std::vector<std::unique_ptr<Block>>&

@@ -47,37 +47,37 @@ computeRegisterClasses(hir::Program& program)
 struct SelectionContext
 {
     std::vector<lir::RegClass> regClasses;
-    std::vector<std::uint32_t> regMap;
+    std::vector<lir::Temp_id> regMap;
     lir::Program* lprog;
 
     std::map<std::pair<lir::Block*, lir::Block*>, unsigned> controlFlowVars;
 };
 
-lir::Temp
+lir::Temp_id
 getReg(SelectionContext& ctx, hir::Def& def)
 {
     lir::RegClass rc = ctx.regClasses[def.id()];
     unsigned size = 4;
     if (ctx.regMap[def.id()] == ~0U) {
-        ctx.regMap[def.id()] = ctx.lprog->allocateId();
+        ctx.regMap[def.id()] = ctx.lprog->allocate_temp(rc, size);
     }
 
-    return lir::Temp{ctx.regMap[def.id()], rc, size};
+    return ctx.regMap[def.id()];
 }
 
-lir::Temp
+lir::Temp_id
 getReg(SelectionContext& ctx, hir::Def& def, lir::RegClass rc, unsigned size)
 {
     return getReg(ctx, def);
 }
 
-lir::Temp
+lir::Temp_id
 getSingleSGPR(SelectionContext& ctx, hir::Def& def)
 {
     return getReg(ctx, def, lir::RegClass::sgpr, 4);
 }
 
-lir::Temp
+lir::Temp_id
 getSingleVGPR(SelectionContext& ctx, hir::Def& def)
 {
     return getReg(ctx, def, lir::RegClass::vgpr, 4);
@@ -87,9 +87,9 @@ void
 createStartInstruction(SelectionContext& ctx, lir::Program& lprog, hir::Program& program)
 {
     auto newInst = std::make_unique<lir::Inst>(lir::OpCode::start, 3, 0);
-    newInst->getDefinition(0) = lir::Arg{getReg(ctx, *program.params()[0], lir::RegClass::sgpr, 4), lir::PhysReg{16}};
-    newInst->getDefinition(1) = lir::Arg{getSingleVGPR(ctx, *program.params()[1]), lir::PhysReg{0 + 256}};
-    newInst->getDefinition(2) = lir::Arg{getSingleVGPR(ctx, *program.params()[2]), lir::PhysReg{1 + 256}};
+    newInst->getDefinition(0) = lir::Arg{getReg(ctx, *program.params()[0], lir::RegClass::sgpr, 4), lir::PhysReg{16 * 4}};
+    newInst->getDefinition(1) = lir::Arg{getSingleVGPR(ctx, *program.params()[1]), lir::PhysReg{(0 + 256) * 4}};
+    newInst->getDefinition(2) = lir::Arg{getSingleVGPR(ctx, *program.params()[2]), lir::PhysReg{(1 + 256) * 4}};
 
     lprog.blocks().front()->instructions().push_back(std::move(newInst));
 }
@@ -100,7 +100,7 @@ createVectorCompare(SelectionContext& ctx, lir::OpCode opCode, hir::Inst& inst, 
     auto newInst = std::make_unique<lir::Inst>(opCode, 1, 2);
     newInst->getOperand(0) = lir::Arg{getReg(ctx, *inst.getOperand(0))};
     newInst->getOperand(1) = lir::Arg{getReg(ctx, *inst.getOperand(1))};
-    newInst->getDefinition(0) = lir::Arg{getReg(ctx, inst), lir::PhysReg{106}};
+    newInst->getDefinition(0) = lir::Arg{getReg(ctx, inst), lir::PhysReg{106 * 4}};
 
     lbb.instructions().push_back(std::move(newInst));
 }
@@ -112,9 +112,9 @@ createLogicalCondBranch(SelectionContext& ctx, hir::Inst& inst, lir::Block& lbb)
     newInst->getOperand(0) = lir::Arg{getReg(ctx, *inst.getOperand(0))};
 
     newInst->getDefinition(0) =
-      lir::Arg{lir::Temp{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[0]})->second, lir::RegClass::sgpr, 8}};
+      lir::Arg{lir::Temp_id{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[0]})->second}};
     newInst->getDefinition(1) =
-      lir::Arg{lir::Temp{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[1]})->second, lir::RegClass::sgpr, 8}};
+      lir::Arg{lir::Temp_id{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[1]})->second}};
     lbb.instructions().push_back(std::move(newInst));
 }
 
@@ -124,7 +124,7 @@ createLogicalBranch(SelectionContext& ctx, hir::Inst& inst, lir::Block& lbb)
     auto newInst = std::make_unique<lir::Inst>(lir::OpCode::logical_branch, 1, 0);
 
     newInst->getDefinition(0) =
-      lir::Arg{lir::Temp{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[0]})->second, lir::RegClass::sgpr, 8}};
+      lir::Arg{lir::Temp_id{ctx.controlFlowVars.find({&lbb, lbb.logicalSuccessors()[0]})->second}};
     lbb.instructions().push_back(std::move(newInst));
 }
 
@@ -151,7 +151,7 @@ createBlockStart(SelectionContext& ctx, lir::Block& lbb, hir::Program& program)
     auto newInst = std::make_unique<lir::Inst>(lir::OpCode::start_block, 0, lbb.logicalPredecessors().size());
     for (unsigned i = 0; i < lbb.logicalPredecessors().size(); ++i) {
         newInst->getOperand(i) = lir::Arg{
-          lir::Temp{ctx.controlFlowVars.find({lbb.logicalPredecessors()[i], &lbb})->second, lir::RegClass::sgpr, 8}};
+          lir::Temp_id{ctx.controlFlowVars.find({lbb.logicalPredecessors()[i], &lbb})->second}};
     }
 
     lbb.instructions().push_back(std::move(newInst));
@@ -183,7 +183,7 @@ selectInstructions(hir::Program& program)
 
         for (auto succ : bb.successors()) {
             lbb.logicalSuccessors().push_back(ctx.lprog->blocks()[succ->id()].get());
-            ctx.controlFlowVars.insert({{&lbb, ctx.lprog->blocks()[succ->id()].get()}, ctx.lprog->allocateId()});
+            ctx.controlFlowVars.insert({{&lbb, ctx.lprog->blocks()[succ->id()].get()}, ctx.lprog->allocate_temp(lir::RegClass::sgpr, 8)});
         }
     }
 
@@ -203,7 +203,7 @@ selectInstructions(hir::Program& program)
                     auto p1 = std::make_unique<lir::Inst>(lir::OpCode::v_interp_p1_f32, 1, 2); //(attribute, component);
                     auto p2 = std::make_unique<lir::Inst>(lir::OpCode::v_interp_p2_f32, 1, 3); //(attribute, component);
 
-                    lir::Temp tmp{lprog->allocateId(), lir::RegClass::vgpr, 4};
+                    lir::Temp_id tmp = lprog->allocate_temp(lir::RegClass::vgpr, 4);
                     p1->getDefinition(0) = lir::Arg{tmp};
                     p1->getOperand(0) = lir::Arg{getSingleVGPR(ctx, *insn.getOperand(1))};
                     p1->getOperand(1) = lir::Arg{getSingleSGPR(ctx, *insn.getOperand(0)), lir::PhysReg{124}};
