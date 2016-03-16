@@ -99,7 +99,8 @@ enum class VOP2OpCode
 {
     v_cndmask_b32 = 0,
     v_add_f32 = 1,
-    v_sub_f32 = 2
+    v_sub_f32 = 2,
+    v_xor_b32 = 21
 };
 
 enum class VOP1OpCode
@@ -190,14 +191,12 @@ class Encoder
         data_.push_back((0b101111111U << 23) | (static_cast<unsigned>(opCode) << 16) | (imm & 0xFFFFU));
     }
 
-    void encodeVOP2(VOP2OpCode opCode, lir::Arg dest, lir::Arg src1, lir::Arg src2)
+    void encodeVOP2(VOP2OpCode opCode, vgpr dest, vsrc src1, vgpr src2)
     {
-        bool extended = false;
-        std::uint32_t extension;
-        data_.push_back((0b0U << 31) | (static_cast<unsigned>(opCode) << 25) | (getVGPR(dest) << 17) |
-                        (getVGPR(src2) << 9) | getVSRC(src1, extended, extension));
-        if (extended)
-            data_.push_back(extension);
+        data_.push_back((0b0U << 31) | (static_cast<unsigned>(opCode) << 25) | (dest.value << 17) |
+                        (src2.value << 9) | src1.value);
+        if (src1.value == 255)
+            data_.push_back(src1.constant);
     }
 
     void encodeVOPC(VOPCOpCode opCode, vsrc src1, vgpr src2)
@@ -413,8 +412,11 @@ Emitter::emitParallelCopy(lir::Inst& insn)
                 auto const& op = copies[i].first;
                 auto const& def = copies[i].second;
 
-                if (program->temp_info(op.temp()).reg_class == lir::RegClass::sgpr &&
-                    program->temp_info(def.temp()).reg_class == lir::RegClass::sgpr) {
+                if (op.physReg().reg == def.physReg().reg) {
+                    copies.erase(copies.begin() + i);
+                    --i;
+                } else if (program->temp_info(op.temp()).reg_class == lir::RegClass::sgpr &&
+                           program->temp_info(def.temp()).reg_class == lir::RegClass::sgpr) {
                     if (program->temp_info(op.temp()).size == 4)
                         encoder.encodeSOP1(SOP1OpCode::s_mov_b32, make_sgpr(def), make_ssrc(op));
                     else
@@ -431,8 +433,17 @@ Emitter::emitParallelCopy(lir::Inst& insn)
                 --i;
             }
         }
-        if (!progress)
+        if (!progress) {
+            auto copy = copies.back();
+            copies.pop_back();
+	    if(program->temp_info(copy.second.temp()).reg_class == lir::RegClass::vgpr) {
+		encoder.encodeVOP2(VOP2OpCode::v_xor_b32, make_vgpr(copy.second), make_vsrc(copy.first), make_vgpr(copy.second));
+		encoder.encodeVOP2(VOP2OpCode::v_xor_b32, make_vgpr(copy.first), make_vsrc(copy.second), make_vgpr(copy.first));
+		encoder.encodeVOP2(VOP2OpCode::v_xor_b32, make_vgpr(copy.second), make_vsrc(copy.first), make_vgpr(copy.second));
+	    } else
             std::terminate();
+		break;
+        }
     }
 }
 }

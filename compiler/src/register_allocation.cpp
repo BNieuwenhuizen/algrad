@@ -66,7 +66,8 @@ compute_live_in(lir::Program& program)
                     }
                     for (unsigned i = 0; i < op_count; ++i) {
                         if (insn->getOperand(i).is_temp()) {
-                            live.insert(insn->getOperand(i).temp());
+                            if (live.find(insn->getOperand(i).temp()) == live.end())
+                                live.insert(insn->getOperand(i).temp());
                         }
                     }
                 }
@@ -141,6 +142,7 @@ fix_ssa_rename_visit(lir::Program& program, lir::Block& block, std::vector<bool>
         return;
     visited[block.id()] = true;
 
+    auto undo_size = undo.size();
     for (auto& insn : block.instructions()) {
         if (insn->opCode() != lir::OpCode::phi) {
             auto op_count = insn->operandCount();
@@ -173,7 +175,23 @@ fix_ssa_rename_visit(lir::Program& program, lir::Block& block, std::vector<bool>
         }
     }
 
-    auto undo_size = undo.size();
+    for (auto succ : (logical ? block.logicalSuccessors() : block.linearizedSuccessors())) {
+        auto index = lir::findBlock(logical ? succ->logicalPredecessors() : succ->linearizedPredecessors(), &block);
+        for (auto& inst : succ->instructions()) {
+            if (inst->opCode() != lir::OpCode::phi)
+                break;
+            if ((logical && program.temp_info(inst->getDefinition(0).temp()).reg_class != lir::RegClass::vgpr) ||
+                (!logical && program.temp_info(inst->getDefinition(0).temp()).reg_class == lir::RegClass::vgpr))
+                continue;
+
+            auto id = inst->getOperand(index).temp();
+            if (renames.at(id) == ~0U)
+                std::terminate();
+
+            inst->getOperand(index).set_temp(renames[id]);
+        }
+    }
+
     if (logical) {
         for (auto succ : block.logicalSuccessors())
             fix_ssa_rename_visit(program, *succ, visited, renames, undo, logical);
@@ -197,12 +215,28 @@ fix_ssa_rename(lir::Program& program)
     std::vector<std::pair<unsigned, unsigned>> undo;
     fix_ssa_rename_visit(program, *program.blocks()[0], visited, renames, undo, false);
     std::fill(visited.begin(), visited.end(), false);
+    std::fill(renames.begin(), renames.end(), ~0U);
     fix_ssa_rename_visit(program, *program.blocks()[0], visited, renames, undo, true);
 }
 void
 fix_ssa(lir::Program& program)
 {
     fix_ssa_rename(program);
+}
+bool
+allowed(std::vector<bool> const& forbidden, unsigned index, unsigned size)
+{
+    for (unsigned i = 0; i < size; ++i)
+        if (forbidden[i + index])
+            return false;
+    return true;
+}
+
+void
+set_forbidden(std::vector<bool>& forbidden, unsigned index, unsigned size, bool value)
+{
+    for (unsigned i = 0; i < size; ++i)
+        forbidden[i + index] = value;
 }
 
 std::vector<int>
@@ -226,9 +260,7 @@ color_registers(lir::Program& program)
                     auto& arg = (*it)->getOperand(i);
                     if (arg.is_temp()) {
                         if (arg.kill()) {
-                            auto size = program.temp_info(arg.temp()).size;
-                            for (std::size_t j = 0; j < size; ++j)
-                                colors_used[colors[arg.temp()] + j] = false;
+                            set_forbidden(colors_used, colors[arg.temp()], program.temp_info(arg.temp()).size, false);
                         }
                         arg.setFixed(lir::PhysReg{static_cast<unsigned>(colors[arg.temp()])});
                     }
@@ -238,45 +270,57 @@ color_registers(lir::Program& program)
             auto def_count = (*it)->definitionCount();
             for (std::size_t i = 0; i < def_count; ++i) {
                 auto& def = (*it)->getDefinition(i);
-                if (def.is_temp()) {
-                    if (colors[def.temp()] < 0) {
-                        std::vector<bool> forbidden = colors_used;
-                        int c = -1;
-                        if (def.isFixed()) {
-                            c = def.physReg().reg;
-                        }
-                        if (it + 1 != bb->instructions().end() && (*it)->opCode() == lir::OpCode::parallel_copy) {
-                            auto op_count_2 = it[1]->operandCount();
-                            for (unsigned j = 0; j < op_count_2; ++j) {
-                                auto const& arg2 = it[1]->getOperand(j);
-                                if (arg2.isFixed()) {
-                                    if (def.temp() != arg2.temp())
-                                        forbidden[arg2.physReg().reg] = true;
-                                    else
-                                        c = arg2.physReg().reg;
-                                }
-                            }
-                        }
-                        if (c == -1 && (*it)->opCode() == lir::OpCode::parallel_copy) {
-                            auto prev_arg = (*it)->getOperand(i);
-                            if (!forbidden[prev_arg.physReg().reg]) {
-                                c = prev_arg.physReg().reg;
-                            }
-                        }
-
-                        if (c == -1) {
-                            c = program.temp_info(def.temp()).reg_class == lir::RegClass::vgpr ? 1024 : 0;
-                            while (forbidden[c])
-                                c += program.temp_info(def.temp()).size;
-                        }
-
-                        auto size = program.temp_info(def.temp()).size;
-			for(std::size_t j = 0; j < size; ++j)
-				colors_used[c + j] = true;
-                        colors[def.temp()] = c;
+                if (colors[def.temp()] < 0) {
+                    std::vector<bool> forbidden = colors_used;
+                    int c = -1;
+                    if (def.isFixed()) {
+                        c = def.physReg().reg;
                     }
-                    def.setFixed(lir::PhysReg{static_cast<unsigned>(colors[def.temp()])});
+                    if (it + 1 != bb->instructions().end() && (*it)->opCode() == lir::OpCode::parallel_copy) {
+                        auto op_count_2 = it[1]->operandCount();
+                        for (unsigned j = 0; j < op_count_2; ++j) {
+                            auto const& arg2 = it[1]->getOperand(j);
+                            if (arg2.isFixed()) {
+                                if (def.temp() != arg2.temp())
+                                    set_forbidden(forbidden, arg2.physReg().reg, program.temp_info(arg2.temp()).size,
+                                                  true);
+                                else
+                                    c = arg2.physReg().reg;
+                            }
+                        }
+                    }
+                    if (c == -1 && (*it)->opCode() == lir::OpCode::parallel_copy) {
+                        auto& prev_arg = (*it)->getOperand(i);
+                        if (prev_arg.temp() && !prev_arg.kill()) {
+                            std::cerr << prev_arg.temp() << " has no kill\n";
+                        }
+                        if (allowed(forbidden, prev_arg.physReg().reg, program.temp_info(prev_arg.temp()).size)) {
+                            c = prev_arg.physReg().reg;
+                        } else
+                            std::cerr << "preferred move failed for " << def.temp() << " " << prev_arg.temp() << "\n";
+                    }
+                    if (c == -1 && (*it)->opCode() == lir::OpCode::phi) {
+                        int candidate = -1;
+                        auto op_count = (*it)->operandCount();
+                        for (std::size_t j = 0; j < op_count; ++j) {
+                            if ((*it)->getOperand(j).is_temp() && colors[(*it)->getOperand(j).temp()] >= 0)
+                                candidate = colors[(*it)->getOperand(j).temp()];
+                        }
+                        if (candidate >= 0 && allowed(forbidden, candidate, program.temp_info(def.temp()).size)) {
+                            c = candidate;
+                        }
+                    }
+
+                    if (c == -1) {
+                        c = program.temp_info(def.temp()).reg_class == lir::RegClass::vgpr ? 1024 : 0;
+                        while (!allowed(forbidden, c, program.temp_info(def.temp()).size))
+                            c += program.temp_info(def.temp()).size;
+                    }
+
+                    set_forbidden(colors_used, c, program.temp_info(def.temp()).size, true);
+                    colors[def.temp()] = c;
                 }
+                def.setFixed(lir::PhysReg{static_cast<unsigned>(colors[def.temp()])});
             }
         }
     }
@@ -330,6 +374,8 @@ destroy_phis(lir::Program& program)
                  it != succ->instructions().end() && (*it)->opCode() == lir::OpCode::phi; ++it) {
                 if (program.temp_info((*it)->getDefinition(0).temp()).reg_class != lir::RegClass::vgpr)
                     continue;
+                // if ((*it)->getOperand(index).physReg().reg == (*it)->getDefinition(0).physReg().reg)
+                //    continue;
                 args.emplace_back((*it)->getOperand(index), (*it)->getDefinition(0));
             }
         }

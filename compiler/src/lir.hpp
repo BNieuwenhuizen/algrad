@@ -374,6 +374,17 @@ findOrInsertBlock(std::vector<Block*>& arr, Block* n)
 }
 
 inline std::size_t
+findBlock(std::vector<Block*>& arr, Block* n)
+{
+    for (std::size_t i = 0; i < arr.size(); ++i) {
+        if (arr[i] == n) {
+            return i;
+        }
+    }
+    std::terminate();
+}
+
+inline std::size_t
 renameBlock(std::vector<Block*>& arr, Block* old, Block* replacement) noexcept
 {
     for (std::size_t i = 0; i < arr.size(); ++i) {

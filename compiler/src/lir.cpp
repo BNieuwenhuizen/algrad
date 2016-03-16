@@ -61,6 +61,8 @@ print(std::ostream& os, Program& program)
 		    auto arg = insn->getOperand(i);
 		    if(arg.is_temp()) {
 			    os << arg.temp();
+			    if(arg.kill())
+				    os << "(k)";
 		    }
 	    }
 
