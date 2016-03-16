@@ -11,10 +11,12 @@ namespace {
 void
 visitRPO(hir::BasicBlock& bb, int& index)
 {
-    if (bb.id() >= 0)
+    if (bb.id() >= 0 || bb.id() == -2)
         return;
+    bb.setId(-2);
     for (auto succ : bb.successors())
         visitRPO(*succ, index);
+
     bb.setId(--index);
 }
 }

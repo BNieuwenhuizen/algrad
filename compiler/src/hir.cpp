@@ -31,14 +31,16 @@ replace(Def& old, Def& replacement) noexcept
 Inst::Inst(OpCode opCode, int id, Type type, unsigned operandCount) noexcept
   : Def{opCode, id, type},
     flags_{defaultInstFlags[static_cast<std::uint16_t>(opCode)]},
-    operands_(operandCount, Use(this)), parent_{nullptr}
+    operands_(operandCount, Use(this)),
+    parent_{nullptr}
 {
 }
 
 Inst::Inst(OpCode opCode, int id, Type type, InstFlags flags, unsigned operandCount) noexcept
   : Def{opCode, id, type},
     flags_{flags},
-    operands_(operandCount, Use(this)), parent_{nullptr}
+    operands_(operandCount, Use(this)),
+    parent_{nullptr}
 {
 }
 
@@ -50,6 +52,13 @@ void
 Inst::eraseOperand(unsigned index) noexcept
 {
     operands_.erase(operands_.begin() + index);
+}
+
+void
+Inst::appendOperand(Def* def) noexcept
+{
+    operands_.push_back(Use(this));
+    operands_.back().setProducer(def);
 }
 
 BasicBlock::BasicBlock(int id)
@@ -80,7 +89,7 @@ Program::Program(ProgramType type)
 
 Program::~Program() noexcept
 {
-	variables_.clear_and_dispose([](Inst* inst) { delete inst; });
+    variables_.clear_and_dispose([](Inst* inst) { delete inst; });
 }
 
 std::unique_ptr<BasicBlock>
@@ -176,10 +185,10 @@ print(std::ostream& os, Program& program)
         for (auto& insn : bb->instructions()) {
             os << "     ";
             if (insn.type() != &voidType) {
-		    if(insn.isVarying())
-			    os << "varying ";
+                if (insn.isVarying())
+                    os << "varying ";
                 os << "%" << insn.id() << " = ";
-	    }
+            }
             os << toString(insn.opCode());
             std::size_t operandCount = insn.operandCount();
             for (std::size_t i = 0; i < operandCount; ++i) {

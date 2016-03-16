@@ -34,10 +34,21 @@ lowerInput(Program& program)
     }
 }
 
+hir::BasicBlock& find_ret_block(Program& program) {
+	for(auto& block : program.basicBlocks()) {
+		if(block->instructions().empty())
+			continue;
+		auto& inst = block->instructions().back();
+		if(inst.opCode() == hir::OpCode::ret)
+			return *block;
+	}
+	std::abort();
+}
+
 void
 lowerOutput(Program& program)
 {
-    auto& endBlock = *program.basicBlocks().back();
+    auto& endBlock = find_ret_block(program);
     auto& ret = endBlock.instructions().back();
     if (ret.operandCount() == 0)
         std::abort();

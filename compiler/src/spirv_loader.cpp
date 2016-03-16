@@ -390,6 +390,26 @@ createShuffleInstruction(boost::iterator_range<std::uint32_t const*> insn, SPIRV
 }
 
 void
+createCompositeExtractInstruction(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder,
+                                  FunctionBuilder& fb)
+{
+    auto type = getType(builder, insn.begin()[1]);
+    auto id = insn.begin()[2];
+    auto newInsn = builder.program->createDef<Inst>(hir::OpCode::compositeExtract, type, insn.size() - 3);
+    for (unsigned i = 0; i < 1; ++i)
+        newInsn->setOperand(i, getDef(builder, insn.begin()[i + 3]));
+
+    for (unsigned i = 1; i + 3 < insn.size(); ++i)
+        newInsn->setOperand(
+          i, builder.program->getScalarConstant(&int32Type, static_cast<std::uint64_t>(insn.begin()[i + 3])));
+
+    builder.objects[id].tag = SPIRVObject::Tag::def;
+    builder.objects[id].def = newInsn.get();
+
+    fb.currentBlock->insertBack(std::move(newInsn));
+}
+
+void
 visitLabel(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
 {
     auto id = insn[1];
@@ -444,6 +464,20 @@ visitBranchConditional(boost::iterator_range<std::uint32_t const*> insn, SPIRVBu
     falseBlock.insertPredecessor(fb.currentBlock);
 }
 
+void
+createLocalVariable(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
+{
+    auto id = insn[2];
+    auto type = getType(builder, insn[1]);
+    assert(type->kind() == TypeKind::pointer);
+    auto v = builder.program->createDef<Inst>(OpCode::variable, type, 0);
+
+    builder.objects[id].tag = SPIRVObject::Tag::def;
+    builder.objects[id].def = v.get();
+
+    builder.program->insertVariable(std::move(v));
+}
+
 bool
 visitBody(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builder, FunctionBuilder& fb)
 {
@@ -475,8 +509,20 @@ visitBody(boost::iterator_range<std::uint32_t const*> insn, SPIRVBuilder& builde
         case spv::Op::OpVectorShuffle:
             createShuffleInstruction(insn, builder, fb);
             return true;
+        case spv::Op::OpCompositeConstruct:
+            createSimpleInstruction(insn, builder, fb, OpCode::compositeConstruct);
+            return true;
+        case spv::Op::OpCompositeExtract:
+            createCompositeExtractInstruction(insn, builder, fb);
+            return true;
         case spv::Op::OpFOrdLessThan:
             createSimpleInstruction(insn, builder, fb, OpCode::orderedLessThan);
+            return true;
+        case spv::Op::OpFAdd:
+            createSimpleInstruction(insn, builder, fb, OpCode::floatAdd);
+            return true;
+        case spv::Op::OpVariable:
+            createLocalVariable(insn, builder, fb);
             return true;
         case spv::Op::OpSelectionMerge:
         case spv::Op::OpLoopMerge:

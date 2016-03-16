@@ -30,6 +30,7 @@ namespace hir {
     _(compositeConstruct, InstFlags::none)                                                                             \
     _(compositeExtract, InstFlags::none)                                                                               \
     _(vectorShuffle, InstFlags::none)                                                                                  \
+    _(floatAdd, InstFlags::none)                                                                                       \
     _(orderedLessThan, InstFlags::none)                                                                                \
     _(gcnInterpolate, InstFlags::none)                                                                                 \
     _(gcnExport, InstFlags::hasSideEffects)
@@ -148,6 +149,7 @@ class Inst final : public Def, public boost::intrusive::list_base_hook<>
     void setOperand(std::size_t index, Def* def) noexcept;
 
     void eraseOperand(unsigned index) noexcept;
+    void appendOperand(Def* def) noexcept;
 
     void identify(Def* def);
 
